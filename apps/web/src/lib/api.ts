@@ -10,11 +10,12 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
   const res = await fetch(path, {
     method,
     credentials: 'include',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined || isForm ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
   });
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
@@ -37,4 +38,27 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   delete: <T = void>(path: string) => request<T>('DELETE', path),
+  upload: <T>(path: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<T>('POST', path, form);
+  },
 };
+
+/** Trigger a browser download for a GET endpoint (e.g. exports). */
+export async function download(path: string, fallbackName: string) {
+  const res = await fetch(path, { credentials: 'include' });
+  if (!res.ok)
+    throw new ApiError(
+      res.status,
+      (await res.json().catch(() => null))?.message ?? 'Download failed',
+    );
+  const name =
+    /filename="?([^";]+)"?/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

@@ -2,14 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, ApiError } from '../api';
 
 const respond = (status: number, body?: unknown) =>
-  vi
-    .fn()
-    .mockResolvedValue({
-      ok: status < 400,
-      status,
-      statusText: 'x',
-      json: () => (body === undefined ? Promise.reject() : Promise.resolve(body)),
-    });
+  vi.fn().mockResolvedValue({
+    ok: status < 400,
+    status,
+    statusText: 'x',
+    json: () => (body === undefined ? Promise.reject() : Promise.resolve(body)),
+  });
 
 afterEach(() => vi.unstubAllGlobals());
 

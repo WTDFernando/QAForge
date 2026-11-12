@@ -19,7 +19,7 @@ export function OrgSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground text-xs font-bold text-background">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-foreground text-[11px] font-bold text-background">
           {org?.name[0]?.toUpperCase() ?? '·'}
         </span>
         <span className="min-w-0 flex-1">
@@ -34,7 +34,7 @@ export function OrgSwitcher() {
         </span>
         <ChevronsUpDown className="size-4 text-muted-foreground" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-60">
+      <DropdownMenuContent align="start" side="top" className="w-60">
         <DropdownMenuLabel>Organizations</DropdownMenuLabel>
         {me?.organizations.map((o) => (
           <DropdownMenuCheckItem key={o.id} checked={o.id === org?.id} asChild>

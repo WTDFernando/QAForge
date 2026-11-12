@@ -10,7 +10,14 @@ import type {
   UpdateProjectInput,
 } from '@qaforge/shared';
 import { api } from '@/lib/api';
-import type { AuditEntry, Invitation, Me, Member, Organization, Project } from '@/lib/types';
+import type {
+  AuditEntry,
+  Invitation,
+  Me,
+  Member,
+  Organization,
+  ProjectFull as Project,
+} from '@/lib/types';
 
 export const keys = {
   me: ['me'] as const,

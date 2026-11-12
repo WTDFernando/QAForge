@@ -1,0 +1,117 @@
+'use client';
+import { useState } from 'react';
+import { useParams } from 'next/navigation';
+import { Plus, Search, Upload } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shell/page-header';
+import { useCreateAction } from '@/components/shell/ui-state';
+import { useCurrentProject } from '@/hooks/queries';
+import { useRequirements } from '@/hooks/qa';
+import { useCan } from '@/hooks/use-permission';
+import { cn } from '@/lib/utils';
+import { CreateRequirementDialog } from './create-requirement-dialog';
+import { RequirementTree } from './requirement-tree';
+
+/** Two-pane workspace: tree on the left, the selected requirement (or sources overview) on the right. */
+export function RequirementsWorkspace({ children }: { children: React.ReactNode }) {
+  const { project, org } = useCurrentProject();
+  const { id } = useParams<{ id?: string }>();
+  const reqs = useRequirements(project?.id);
+  const canEdit = useCan('requirement:write');
+  const [query, setQuery] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  useCreateAction('New requirement', canEdit ? () => setCreateOpen(true) : null);
+
+  if (!project || !org)
+    return (
+      <div className="p-8">
+        <Skeleton className="h-8 w-64" />
+      </div>
+    );
+  const basePath = `/${org.slug}/p/${project.key}`;
+  const selected = reqs.data?.find((r) => r.id === id) ?? null;
+
+  return (
+    <>
+      <PageHeader
+        breadcrumb={
+          <>
+            {project.name} / <span className="text-foreground">Requirements</span>
+          </>
+        }
+        title="Requirements"
+        description="Epics, features and user stories with acceptance criteria."
+        actions={
+          canEdit && (
+            <>
+              <Button variant="outline" asChild>
+                <a href={`${basePath}/requirements#upload`}>
+                  <Upload /> Upload
+                </a>
+              </Button>
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus /> New requirement
+              </Button>
+            </>
+          )
+        }
+      />
+      <div className="flex min-h-0 flex-1 gap-0 border-t lg:mx-8 lg:mb-8 lg:rounded-xl lg:border">
+        <aside
+          className={cn(
+            'flex w-full flex-col border-r lg:w-80 lg:shrink-0',
+            id && 'hidden lg:flex',
+          )}
+          aria-label="Requirement tree"
+        >
+          <div className="border-b p-2">
+            <div className="relative">
+              <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filter by title or REQ-…"
+                className="pl-8"
+                aria-label="Filter requirements"
+              />
+            </div>
+          </div>
+          <div className="min-h-64 flex-1 overflow-y-auto px-1">
+            {reqs.isLoading ? (
+              <div className="grid gap-2 p-2">
+                {[0, 1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-6" />
+                ))}
+              </div>
+            ) : (
+              <RequirementTree
+                projectId={project.id}
+                rows={reqs.data ?? []}
+                basePath={basePath}
+                selectedId={id}
+                query={query}
+                canEdit={canEdit}
+              />
+            )}
+          </div>
+          {canEdit && (
+            <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">
+              Tip: drag to nest or reorder. Press C to add.
+            </p>
+          )}
+        </aside>
+        <section className={cn('min-w-0 flex-1', !id && 'hidden lg:block')}>{children}</section>
+      </div>
+      <CreateRequirementDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        projectId={project.id}
+        basePath={basePath}
+        parent={selected}
+        requirements={reqs.data ?? []}
+      />
+    </>
+  );
+}

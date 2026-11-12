@@ -61,8 +61,8 @@ export default function MembersPage() {
   const members = useMembers(org?.id);
   const canManage = useCan('members:manage');
   const invitations = useInvitations(org?.id, canManage);
-  const updateRole = useUpdateMemberRole(org?.id ?? '');
-  const remove = useRemoveMember(org?.id ?? '');
+  const { mutate: updateRole } = useUpdateMemberRole(org?.id ?? '');
+  const { mutate: removeMember } = useRemoveMember(org?.id ?? '');
   const revoke = useRevokeInvite(org?.id ?? '');
   const [sorting, setSorting] = useState<SortingState>([]);
   const [filter, setFilter] = useState('');
@@ -113,7 +113,7 @@ export default function MembersPage() {
             <Select
               value={m.role}
               onValueChange={(role) =>
-                updateRole.mutate(
+                updateRole(
                   { memberId: m.id, role: role as Role },
                   {
                     onSuccess: () =>
@@ -159,7 +159,7 @@ export default function MembersPage() {
                 <DropdownMenuItem
                   variant="destructive"
                   onSelect={() =>
-                    remove.mutate(m.id, {
+                    removeMember(m.id, {
                       onSuccess: () =>
                         toast.success(
                           isSelf ? 'You left the organization' : `${m.user.name} removed`,
@@ -176,7 +176,7 @@ export default function MembersPage() {
         },
       }),
     ];
-  }, [org?.role, me?.user.id, canManage, updateRole, remove]);
+  }, [org?.role, me?.user.id, canManage, updateRole, removeMember]);
 
   const table = useReactTable({
     data: members.data ?? [],

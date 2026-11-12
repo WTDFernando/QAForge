@@ -27,7 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <UiStateProvider>
       <div className="flex h-screen overflow-hidden">
         {params.org && <Sidebar />}
-        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <div id="main" className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           {notFound ? (
             <div className="m-auto max-w-sm text-center">
               <h1 className="text-lg font-semibold">Organization not found</h1>

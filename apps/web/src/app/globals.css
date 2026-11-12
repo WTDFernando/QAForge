@@ -22,6 +22,9 @@
   --destructive: oklch(0.58 0.22 27);
   --success: oklch(0.6 0.15 150);
   --warning: oklch(0.75 0.15 75);
+  /* Text-safe variants (>= 4.5:1 on tinted backgrounds) */
+  --success-text: oklch(0.45 0.12 150);
+  --warning-text: oklch(0.48 0.11 65);
   --border: oklch(0.91 0.005 260);
   --input: oklch(0.91 0.005 260);
   --ring: oklch(0.52 0.2 268);
@@ -46,6 +49,8 @@
   --destructive: oklch(0.65 0.2 25);
   --success: oklch(0.7 0.15 150);
   --warning: oklch(0.8 0.14 75);
+  --success-text: oklch(0.82 0.13 150);
+  --warning-text: oklch(0.85 0.12 80);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.68 0.17 268);
@@ -76,6 +81,8 @@
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-success-text: var(--success-text);
+  --color-warning-text: var(--warning-text);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -87,3 +94,15 @@
   body { @apply bg-background text-foreground font-sans; }
   kbd { @apply font-mono; }
 }
+
+/* Rich text (Tiptap) content */
+.prose-qa { line-height: 1.6; font-size: 0.875rem; }
+.prose-qa > * + * { margin-top: 0.5rem; }
+.prose-qa h2 { font-size: 1.05rem; font-weight: 600; margin-top: 0.75rem; }
+.prose-qa h3 { font-size: 0.95rem; font-weight: 600; }
+.prose-qa ul { list-style: disc; padding-left: 1.25rem; }
+.prose-qa ol { list-style: decimal; padding-left: 1.25rem; }
+.prose-qa blockquote { border-left: 3px solid var(--border); padding-left: 0.75rem; color: var(--muted-foreground); }
+.prose-qa code { font-family: var(--font-mono); background: var(--muted); padding: 0.1rem 0.3rem; border-radius: 4px; }
+.prose-qa a { color: var(--primary); text-decoration: underline; }
+.prose-qa p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--muted-foreground); float: left; height: 0; pointer-events: none; }

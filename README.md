@@ -2,7 +2,7 @@
 
 AI-first, all-in-one QA platform: requirement → approved test cases → executed runs → logged bugs → signed release report, in one app.
 
-> Status: **Phase 1 (Foundation) complete.** See [docs/ROADMAP.md](docs/ROADMAP.md) for the phase plan and [docs/DECISIONS.md](docs/DECISIONS.md) for architecture decisions.
+> Status: **Phase 2 (Requirements & test cases) complete.** See [docs/ROADMAP.md](docs/ROADMAP.md) for the phase plan and [docs/DECISIONS.md](docs/DECISIONS.md) for architecture decisions.
 
 ## Quick start
 
@@ -29,7 +29,9 @@ Open http://localhost:3000 and sign in with any demo account (password `qaforge-
 
 API docs (Swagger): http://localhost:4000/docs · OpenAPI JSON: http://localhost:4000/openapi.json
 
-Keyboard: `⌘K` / `Ctrl+K` command palette, `C` create project.
+Keyboard: `⌘K` / `Ctrl+K` command palette (also accepts IDs like `TC-0003`), `C` create (requirement, test case or project, depending on the page), `/` search the list, `⌘S` / `Ctrl+S` save test case edits.
+
+Uploaded files are stored in `.data/uploads` in development (`STORAGE_DRIVER=local`). Set `STORAGE_DRIVER=s3` and the `S3_*` variables to use any S3-compatible service.
 
 ## Repository layout
 
@@ -54,7 +56,7 @@ infra/docker/  production Dockerfiles
 | `pnpm dev` | Run everything in watch mode |
 | `pnpm build` / `typecheck` / `lint` | Turborepo pipelines |
 | `pnpm test` | Unit + API integration tests (Vitest, needs Postgres + Redis; uses DB `qaforge_test`) |
-| `pnpm --filter @qaforge/web e2e` | Playwright E2E against a running, seeded stack |
+| `pnpm --filter @qaforge/web e2e` | Playwright E2E (incl. WCAG 2.2 AA scan) against a running, seeded stack |
 | `pnpm db:migrate` | Create a new migration in development |
 | `pnpm db:deploy` / `db:seed` | Apply migrations / load demo data |
 | `pnpm --filter @qaforge/api openapi` | Write `openapi.json` |
