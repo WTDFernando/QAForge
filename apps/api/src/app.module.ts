@@ -10,6 +10,13 @@ import { MeModule } from './me/me.controller';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProjectsModule } from './projects/projects.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { EnvironmentsModule } from './environments/environments.controller';
+import { RequirementsModule } from './requirements/requirements.controller';
+import { StorageModule } from './storage/storage.module';
+import { SuitesModule } from './suites/suites.module';
+import { TestCasesModule } from './test-cases/test-cases.module';
+import { ViewsModule } from './views/views.module';
 
 @Module({
   imports: [
@@ -31,6 +38,13 @@ import { ProjectsModule } from './projects/projects.module';
     MeModule,
     OrganizationsModule,
     ProjectsModule,
+    StorageModule,
+    EnvironmentsModule,
+    RequirementsModule,
+    SuitesModule,
+    TestCasesModule,
+    ViewsModule,
+    DashboardModule,
   ],
   providers: [{ provide: APP_PIPE, useClass: ZodValidationPipe }],
 })

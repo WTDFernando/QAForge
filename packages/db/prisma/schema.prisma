@@ -18,17 +18,17 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model User {
-  id            String    @id @default(uuid()) @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
   name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
+  email         String   @unique
+  emailVerified Boolean  @default(false)
   image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  sessions    Session[]
-  accounts    Account[]
-  memberships Membership[]
+  sessions        Session[]
+  accounts        Account[]
+  memberships     Membership[]
   invitationsSent Invitation[] @relation("InvitedBy")
   projectsCreated Project[]    @relation("ProjectCreatedBy")
 
@@ -36,17 +36,17 @@ model User {
 }
 
 model Session {
-  id        String   @id @default(uuid()) @db.Uuid
-  token     String   @unique
-  expiresAt DateTime
-  ipAddress String?
-  userAgent String?
-  userId    String   @db.Uuid
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                   String   @id @default(uuid()) @db.Uuid
+  token                String   @unique
+  expiresAt            DateTime
+  ipAddress            String?
+  userAgent            String?
+  userId               String   @db.Uuid
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Organization the user is currently working in (UI context).
-  activeOrganizationId String? @db.Uuid
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  activeOrganizationId String?  @db.Uuid
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@index([userId])
   @@map("session")
@@ -160,17 +160,27 @@ model Project {
   organizationId String       @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
-  /// Short uppercase key used in human-readable refs (PAY-TC-12). Unique per org.
+  /// Short uppercase key, unique per org (e.g. PAY). Item refs inside a project are TC-0142, REQ-0007...
   key            String
   description    String?
+  /// Project settings, incl. module feature flags ({ modules: { performance: false, ... } }).
+  settings       Json         @default("{}")
   archivedAt     DateTime?
   createdById    String       @db.Uuid
   createdBy      User         @relation("ProjectCreatedBy", fields: [createdById], references: [id])
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  counters  ProjectCounter[]
-  auditLogs AuditLog[]
+  counters     ProjectCounter[]
+  auditLogs    AuditLog[]
+  environments Environment[]
+  requirements Requirement[]
+  sources      RequirementSource[]
+  suites       TestSuite[]
+  testCases    TestCase[]
+  sharedSteps  SharedStep[]
+  attachments  Attachment[]
+  savedViews   SavedView[]
 
   @@unique([organizationId, key])
   @@index([organizationId, archivedAt])
@@ -219,4 +229,351 @@ model AuditLog {
   @@index([entityType, entityId, createdAt])
   @@index([projectId, createdAt])
   @@map("audit_log")
+}
+
+// ---------------------------------------------------------------------------
+// Shared enums
+// ---------------------------------------------------------------------------
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// Conventions for domain entities: projectId scope, createdById/updatedById are user ids
+// (plain uuids; who-did-what is also in AuditLog), deletedAt = soft delete (supports undo).
+
+// ---------------------------------------------------------------------------
+// Environments (Dev, Staging, Prod...)
+// ---------------------------------------------------------------------------
+
+model Environment {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @db.Uuid
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  baseUrl     String?
+  /// Non-secret variables: { KEY: "value" }
+  variables   Json     @default("{}")
+  /// AES-256-GCM encrypted JSON object of secrets. Never returned by the API (only key names).
+  secrets     String?
+  position    Int      @default(0)
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([projectId, name])
+  @@map("environment")
+}
+
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
+
+model Attachment {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @db.Uuid
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Key in the storage backend (local disk in dev, S3 in prod).
+  storageKey  String   @unique
+  fileName    String
+  contentType String
+  size        Int
+  /// Owning item, e.g. ("test_case", id). Null while not yet attached.
+  entityType  String?
+  entityId    String?  @db.Uuid
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+
+  sources RequirementSource[]
+
+  @@index([entityType, entityId])
+  @@map("attachment")
+}
+
+// ---------------------------------------------------------------------------
+// Requirements
+// ---------------------------------------------------------------------------
+
+enum RequirementType {
+  EPIC
+  FEATURE
+  STORY
+}
+
+enum RequirementStatus {
+  DRAFT
+  APPROVED
+  OBSOLETE
+}
+
+enum SourceKind {
+  FILE
+  LINK
+  JIRA
+  GITLAB
+}
+
+enum SourceStatus {
+  UPLOADED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+/// Where requirements came from: an uploaded document, a Figma/URL link, or an issue import.
+model RequirementSource {
+  id           String       @id @default(uuid()) @db.Uuid
+  projectId    String       @db.Uuid
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind         SourceKind
+  name         String
+  attachmentId String?      @db.Uuid
+  attachment   Attachment?  @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+  url          String?
+  status       SourceStatus @default(UPLOADED)
+  /// Agent output summary (clarity, ambiguities...) filled in Phase 3.
+  analysis     Json?
+  createdById  String       @db.Uuid
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  requirements Requirement[]
+
+  @@index([projectId, createdAt])
+  @@map("requirement_source")
+}
+
+model Requirement {
+  id                 String             @id @default(uuid()) @db.Uuid
+  projectId          String             @db.Uuid
+  project            Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Per-project sequence -> REQ-0007
+  seq                Int
+  type               RequirementType    @default(STORY)
+  title              String
+  /// Tiptap JSON document
+  description        Json?
+  /// Plain text derived from description (search, AI context)
+  descriptionText    String             @default("")
+  acceptanceCriteria String[]           @default([])
+  priority           Priority           @default(MEDIUM)
+  status             RequirementStatus  @default(DRAFT)
+  parentId           String?            @db.Uuid
+  parent             Requirement?       @relation("RequirementTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children           Requirement[]      @relation("RequirementTree")
+  position           Int                @default(0)
+  sourceId           String?            @db.Uuid
+  source             RequirementSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  /// 0-100, set by the Requirement Agent (Phase 3)
+  clarityScore       Int?
+  aiGenerated        Boolean            @default(false)
+  version            Int                @default(1)
+  createdById        String             @db.Uuid
+  updatedById        String             @db.Uuid
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+
+  versions  RequirementVersion[]
+  testCases RequirementTestCase[]
+
+  @@unique([projectId, seq])
+  @@index([projectId, parentId, position])
+  @@map("requirement")
+}
+
+model RequirementVersion {
+  id            String      @id @default(uuid()) @db.Uuid
+  requirementId String      @db.Uuid
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  version       Int
+  snapshot      Json
+  createdById   String      @db.Uuid
+  createdAt     DateTime    @default(now())
+
+  @@unique([requirementId, version])
+  @@map("requirement_version")
+}
+
+// ---------------------------------------------------------------------------
+// Test cases
+// ---------------------------------------------------------------------------
+
+model TestSuite {
+  id          String      @id @default(uuid()) @db.Uuid
+  projectId   String      @db.Uuid
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  parentId    String?     @db.Uuid
+  parent      TestSuite?  @relation("SuiteTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children    TestSuite[] @relation("SuiteTree")
+  position    Int         @default(0)
+  createdById String      @db.Uuid
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  testCases TestCase[]
+
+  @@index([projectId, parentId, position])
+  @@map("test_suite")
+}
+
+enum TestCaseStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  DEPRECATED
+}
+
+enum TestCaseType {
+  FUNCTIONAL
+  UI
+  API
+  REGRESSION
+  SMOKE
+  SECURITY
+  PERFORMANCE
+  ACCESSIBILITY
+}
+
+enum TestTechnique {
+  POSITIVE
+  NEGATIVE
+  BOUNDARY
+  EQUIVALENCE
+  DECISION_TABLE
+  STATE_TRANSITION
+  EDGE_CASE
+  EXPLORATORY
+}
+
+enum AutomationStatus {
+  NOT_AUTOMATED
+  CANDIDATE
+  AUTOMATED
+  NOT_APPLICABLE
+}
+
+model TestCase {
+  id               String           @id @default(uuid()) @db.Uuid
+  projectId        String           @db.Uuid
+  project          Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Per-project sequence -> TC-0142
+  seq              Int
+  suiteId          String?          @db.Uuid
+  suite            TestSuite?       @relation(fields: [suiteId], references: [id], onDelete: SetNull)
+  title            String
+  preconditions    String           @default("")
+  /// Parameterised data: { columns: string[], rows: string[][] }
+  testData         Json?
+  priority         Priority         @default(MEDIUM)
+  type             TestCaseType     @default(FUNCTIONAL)
+  technique        TestTechnique?
+  status           TestCaseStatus   @default(DRAFT)
+  automationStatus AutomationStatus @default(NOT_AUTOMATED)
+  tags             String[]         @default([])
+  estimateMinutes  Int?
+  aiGenerated      Boolean          @default(false)
+  /// 0-1, set by the Test Case Writer Agent
+  aiConfidence     Float?
+  version          Int              @default(1)
+  createdById      String           @db.Uuid
+  updatedById      String           @db.Uuid
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+
+  steps        TestStep[]
+  versions     TestCaseVersion[]
+  requirements RequirementTestCase[]
+
+  @@unique([projectId, seq])
+  @@index([projectId, suiteId])
+  @@index([projectId, status])
+  @@map("test_case")
+}
+
+model TestStep {
+  id           String      @id @default(uuid()) @db.Uuid
+  testCaseId   String      @db.Uuid
+  testCase     TestCase    @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  position     Int
+  action       String      @default("")
+  expected     String      @default("")
+  /// When set, this step expands to the shared step's steps.
+  sharedStepId String?     @db.Uuid
+  sharedStep   SharedStep? @relation(fields: [sharedStepId], references: [id], onDelete: Restrict)
+
+  @@index([testCaseId, position])
+  @@map("test_step")
+}
+
+/// Reusable sequence of steps (e.g. "Log in as admin").
+model SharedStep {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @db.Uuid
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  /// [{ action, expected }]
+  steps       Json     @default("[]")
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  usages TestStep[]
+
+  @@unique([projectId, name])
+  @@map("shared_step")
+}
+
+model TestCaseVersion {
+  id          String   @id @default(uuid()) @db.Uuid
+  testCaseId  String   @db.Uuid
+  testCase    TestCase @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  version     Int
+  snapshot    Json
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+
+  @@unique([testCaseId, version])
+  @@map("test_case_version")
+}
+
+/// Traceability: requirement <-> test case (many-to-many).
+model RequirementTestCase {
+  requirementId String      @db.Uuid
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  testCaseId    String      @db.Uuid
+  testCase      TestCase    @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  createdById   String      @db.Uuid
+  createdAt     DateTime    @default(now())
+
+  @@id([requirementId, testCaseId])
+  @@index([testCaseId])
+  @@map("requirement_test_case")
+}
+
+// ---------------------------------------------------------------------------
+// Saved list views (filters, columns, grouping) per user or shared with the project
+// ---------------------------------------------------------------------------
+
+model SavedView {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @db.Uuid
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// "test_case" | "requirement" | ...
+  entity    String
+  name      String
+  config    Json
+  ownerId   String   @db.Uuid
+  shared    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, entity])
+  @@map("saved_view")
 }

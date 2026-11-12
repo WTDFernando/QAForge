@@ -12,8 +12,10 @@ export default async function setup() {
   run('npx prisma migrate deploy');
   const { PrismaClient } = await import('@qaforge/db');
   const prisma = new PrismaClient({ datasourceUrl: url });
+  const tables = await prisma.$queryRaw<{ tablename: string }[]>`
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
   await prisma.$executeRawUnsafe(
-    'TRUNCATE "audit_log","project_counter","project","invitation","membership","organization","verification","account","session","user" CASCADE',
+    `TRUNCATE ${tables.map((t) => `"${t.tablename}"`).join(',')} CASCADE`,
   );
   await prisma.$disconnect();
 }

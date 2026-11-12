@@ -15,6 +15,16 @@ const envSchema = z.object({
   MICROSOFT_CLIENT_ID: z.string().optional(),
   MICROSOFT_CLIENT_SECRET: z.string().optional(),
   LOG_LEVEL: z.string().default('info'),
+  /** 32-byte key (hex or base64) for encrypting environment secrets. Defaults to a key derived from BETTER_AUTH_SECRET. */
+  ENCRYPTION_KEY: z.string().optional(),
+  STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
+  /** Local driver: directory for uploaded files (relative to the API's working directory). */
+  STORAGE_LOCAL_DIR: z.string().default('../../.data/uploads'),
+  S3_ENDPOINT: z.string().optional(),
+  S3_REGION: z.string().default('us-east-1'),
+  S3_BUCKET: z.string().default('qaforge'),
+  S3_ACCESS_KEY: z.string().optional(),
+  S3_SECRET_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

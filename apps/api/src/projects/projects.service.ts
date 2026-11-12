@@ -10,6 +10,7 @@ const projectSelect = {
   name: true,
   key: true,
   description: true,
+  settings: true,
   archivedAt: true,
   createdById: true,
   createdAt: true,
@@ -63,14 +64,18 @@ export class ProjectsService {
   }
 
   async update(actor: Actor, projectId: string, input: UpdateProjectInput) {
-    const { archived, ...fields } = input;
-    const data = {
-      ...fields,
-      ...(archived === undefined ? {} : { archivedAt: archived ? new Date() : null }),
-    };
+    const { archived, modules, ...fields } = input;
     try {
       return await this.prisma.client.$transaction(async (tx) => {
         const before = await tx.project.findUniqueOrThrow({ where: { id: projectId } });
+        const settings = before.settings as { modules?: Record<string, boolean> };
+        const data = {
+          ...fields,
+          ...(archived === undefined ? {} : { archivedAt: archived ? new Date() : null }),
+          ...(modules
+            ? { settings: { ...settings, modules: { ...settings.modules, ...modules } } }
+            : {}),
+        };
         const project = await tx.project.update({
           where: { id: projectId },
           data,

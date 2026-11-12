@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ROLES } from './roles';
+import { projectSettingsSchema } from './qa';
 
 /** Slugs that would collide with top-level app routes. */
 export const RESERVED_SLUGS = new Set([
@@ -52,9 +53,11 @@ export const createProjectSchema = z.object({
 });
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 
-export const updateProjectSchema = createProjectSchema
-  .partial()
-  .extend({ archived: z.boolean().optional() });
+export const updateProjectSchema = createProjectSchema.partial().extend({
+  archived: z.boolean().optional(),
+  /** Partial: only the given module flags change. */
+  modules: projectSettingsSchema.shape.modules,
+});
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 
 export const inviteMemberSchema = z.object({

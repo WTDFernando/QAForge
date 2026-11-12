@@ -14,6 +14,8 @@ export default defineConfig({
       API_URL: 'http://localhost:4000',
       WEB_URL: 'http://localhost:3000',
       REDIS_URL: process.env.REDIS_URL ?? 'redis://localhost:6379',
+      STORAGE_DRIVER: 'local',
+      STORAGE_LOCAL_DIR: '.test-uploads',
     },
     fileParallelism: false,
     testTimeout: 20000,

@@ -62,12 +62,15 @@ describe('slugs', () => {
 
 describe('refs', () => {
   it('round-trips', () => {
-    const ref = formatRef('PAY', 'testCase', 12);
-    expect(ref).toBe('PAY-TC-12');
-    expect(parseRef(ref)).toEqual({ projectKey: 'PAY', kind: 'testCase', seq: 12 });
+    const ref = formatRef('testCase', 142);
+    expect(ref).toBe('TC-0142');
+    expect(parseRef(ref)).toEqual({ kind: 'testCase', seq: 142 });
+    expect(parseRef(' tc-7 ')).toEqual({ kind: 'testCase', seq: 7 });
+    expect(formatRef('requirement', 12345)).toBe('REQ-12345');
   });
   it('rejects junk', () => {
-    expect(parseRef('PAY-XX-1')).toBeNull();
+    expect(parseRef('XX-1')).toBeNull();
+    expect(parseRef('TC-0')).toBeNull();
     expect(parseRef('nope')).toBeNull();
   });
 });
