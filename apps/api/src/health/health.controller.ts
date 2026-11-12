@@ -19,7 +19,10 @@ export class HealthController implements OnModuleDestroy {
     maxRetriesPerRequest: 1,
   });
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {
+    // Reported via /health; avoid unhandled-error log spam when Redis is down.
+    this.redis.on('error', () => undefined);
+  }
 
   @Public()
   @Get()
