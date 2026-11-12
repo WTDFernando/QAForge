@@ -290,6 +290,8 @@ export function TestCaseTable({
     // Grouping is always fully expanded and data is server-driven: never auto-reset internal state
     // (an auto-reset on every data change can otherwise feed a render loop).
     autoResetAll: false,
+    // Keep the user's column order when grouping (default would move the grouped column first).
+    groupedColumnMode: false,
   });
 
   const sortBy = (id: string) => {

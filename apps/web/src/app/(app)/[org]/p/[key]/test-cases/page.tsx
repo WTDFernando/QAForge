@@ -77,14 +77,18 @@ function TestCasesWorkspace({ projectId, review }: { projectId: string; review: 
 
   const setView = useCallback(
     (v: TestCaseViewState) => {
+      // Only changes to the result set (filters, sort, page size) reset paging and selection;
+      // layout changes (grouping, columns, cards) keep them.
+      if (toQueryString(view) !== toQueryString(v)) {
+        setPage(1);
+        setSelection({});
+      }
       setViewState(v);
-      setPage(1);
-      setSelection({});
       try {
         if (project) localStorage.setItem(storageKey(project.id), JSON.stringify(v));
       } catch {}
     },
-    [project],
+    [project, view],
   );
 
   const debouncedQ = useDebounced(view.q);
