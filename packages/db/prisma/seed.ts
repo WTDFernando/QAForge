@@ -1,6 +1,16 @@
 /* Demo data: one org, two projects, users in several roles. Password for all: "qaforge-demo-1" */
+import path from 'node:path';
 import { PrismaClient, Role } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
+
+// Load the monorepo root .env when DATABASE_URL isn't already set (e.g. plain `pnpm db:seed`).
+if (!process.env.DATABASE_URL) {
+  try {
+    process.loadEnvFile(path.resolve(__dirname, '../../../.env'));
+  } catch {
+    /* fall through: Prisma reports the missing variable */
+  }
+}
 
 const prisma = new PrismaClient();
 const PASSWORD = 'qaforge-demo-1';
