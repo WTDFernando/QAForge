@@ -10,7 +10,7 @@ Prerequisites: Node 22+, pnpm 10, Docker.
 
 ```bash
 cp .env.example .env            # then set BETTER_AUTH_SECRET to a random 32+ char string
-docker compose up -d            # Postgres 16 + pgvector, Redis, MinIO
+docker compose up -d            # Postgres 16 + pgvector, Redis
 pnpm install
 pnpm build                      # builds shared packages + generates the Prisma client
 pnpm db:deploy && pnpm db:seed  # schema + demo data
