@@ -1,0 +1,222 @@
+// QAForge data model.
+// Tenancy: Organization -> Project -> (requirements, test cases, runs, bugs, releases...)
+// Conventions: uuid ids, createdAt/updatedAt everywhere, every mutation recorded in AuditLog.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector, pgcrypto]
+}
+
+// ---------------------------------------------------------------------------
+// Identity (tables used by Better Auth; field names follow its core schema)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions    Session[]
+  accounts    Account[]
+  memberships Membership[]
+  invitationsSent Invitation[] @relation("InvitedBy")
+  projectsCreated Project[]    @relation("ProjectCreatedBy")
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Organization the user is currently working in (UI context).
+  activeOrganizationId String? @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(uuid()) @db.Uuid
+  accountId             String
+  providerId            String
+  userId                String    @db.Uuid
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(uuid()) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+enum Role {
+  OWNER
+  ADMIN
+  QA_LEAD
+  QA_ENGINEER
+  DEVELOPER
+  VIEWER
+  CLIENT
+}
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  /// Org-level settings (AI provider/model/limits, defaults). Secrets are stored encrypted, never returned by the API.
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  invitations Invitation[]
+  projects    Project[]
+  auditLogs   AuditLog[]
+
+  @@map("organization")
+}
+
+model Membership {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String       @db.Uuid
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           Role
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("membership")
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+model Invitation {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @db.Uuid
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           Role
+  status         InvitationStatus @default(PENDING)
+  invitedById    String           @db.Uuid
+  invitedBy      User             @relation("InvitedBy", fields: [invitedById], references: [id])
+  expiresAt      DateTime
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([organizationId, status])
+  @@index([email])
+  @@map("invitation")
+}
+
+model Project {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  /// Short uppercase key used in human-readable refs (PAY-TC-12). Unique per org.
+  key            String
+  description    String?
+  archivedAt     DateTime?
+  createdById    String       @db.Uuid
+  createdBy      User         @relation("ProjectCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  counters  ProjectCounter[]
+  auditLogs AuditLog[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId, archivedAt])
+  @@map("project")
+}
+
+/// Monotonic per-project sequence for human refs (REQ-1, TC-1, BUG-1...).
+model ProjectCounter {
+  projectId String  @db.Uuid
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind      String
+  value     Int     @default(0)
+
+  @@id([projectId, kind])
+  @@map("project_counter")
+}
+
+// ---------------------------------------------------------------------------
+// Audit history (append-only)
+// ---------------------------------------------------------------------------
+
+enum ActorType {
+  USER
+  API_TOKEN
+  AI_AGENT
+  SYSTEM
+}
+
+model AuditLog {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String?      @db.Uuid
+  project        Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actorType      ActorType
+  actorId        String?      @db.Uuid
+  entityType     String
+  entityId       String       @db.Uuid
+  action         String
+  /// Only changed fields: { field: { from, to } }
+  changes        Json?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([projectId, createdAt])
+  @@map("audit_log")
+}

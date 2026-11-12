@@ -1,0 +1,23 @@
+{
+  "name": "qaforge",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:generate": "pnpm --filter @qaforge/db generate",
+    "db:migrate": "pnpm --filter @qaforge/db migrate:dev",
+    "db:deploy": "pnpm --filter @qaforge/db migrate:deploy",
+    "db:seed": "pnpm --filter @qaforge/db seed",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "turbo": "^2.11.11",
+    "typescript": "^5.9.3"
+  }
+}
