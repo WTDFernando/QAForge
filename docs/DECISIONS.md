@@ -39,7 +39,24 @@ Where the brief offered alternatives, these were chosen. Ask to revisit any of t
 | Onboarding | A "Get started" checklist on the project dashboard (create project → requirements → test cases → first run) rather than a modal wizard. | Teaches in context, never blocks; becomes a full wizard step once AI generation (Phase 3) and runs (Phase 4) exist. |
 | Accessibility | axe-core WCAG 2.2 AA scan of the main pages in light and dark theme runs in the E2E suite. | Keeps the AA commitment testable. |
 
+## Phase 3 decisions (AI)
+
+| Topic | Decision | Why |
+|---|---|---|
+| Default model | **Claude Opus 5.5** (`claude-opus-5-5`); Sonnet 5.5 and Haiku 5.5 selectable per organization | Best quality for test design; orgs can trade quality for cost. |
+| Request shape | Streaming structured outputs (Zod schema → `output_config.format`), adaptive thinking with explicit `effort` per agent (Requirement/Writer `high`, Reviewer/Copilot `medium`), system prompt cached | Valid JSON by construction, no timeouts on long outputs, lower cost on repeated calls. |
+| Refusals | Server-side fallback on (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`) for models that support it; a remaining refusal fails the job with a clear message | A policy decline on one model doesn't block the user. |
+| "Never invent data" | Enforced in code after every call: only refs from the input, verbatim source quotes checked against the document, every step needs an expected result, reviewer issues must point at real steps. Violations are dropped and listed on the job. | Prompts ask; code guarantees. |
+| Drafts only | Everything AI makes is DRAFT (`aiGenerated`, `aiJobId`, confidence, rationale). Reviewer suggestions and suggested criteria are never applied automatically. Audit entries use actor `AI_AGENT` with the requesting user and job in metadata. | "AI drafts, humans approve." |
+| Where agents run | Requirement, Writer, Reviewer in the **worker** (BullMQ, progress over Redis → SSE). **Copilot in the API** process | Chat needs low latency and streams to one user; batch agents need retries and isolation. |
+| Duplicate detection | **Postgres trigram similarity** (`pg_trgm`) on titles today. `pgvector` stays available for embeddings. | Anthropic has no embeddings API; this works with zero extra setup. See the open question below. |
+| Keys & budgets | Per-org key AES-256-GCM encrypted, write-only, never logged; server `ANTHROPIC_API_KEY` as fallback. Monthly USD budget checked before every job and chat. Every call logged in `ai_usage` with tokens and estimated cost. | Brief: respect budgets, log tokens and cost, admins can disable agents. |
+| Offline mode | `QAFORGE_AI_PROVIDER=fake`: deterministic drafts built from the input, labelled "Offline demo mode" and recorded as model `fake-model`, cost $0 | CI E2E and keyless demos exercise the full pipeline. |
+| Evals | `packages/ai/src/evals`: fixed cases with programmatic checks (coverage of criteria, verified quotes, prompt-injection resistance, vague-input handling). `pnpm --filter @qaforge/ai eval` runs them on a real model; `--fake` checks the harness in CI. | Prompt changes are measurable before they ship. |
+
 ## Deferred (needs a product decision later)
+
+- **Embeddings provider for semantic duplicate detection and search**: options are Voyage AI (Anthropic's recommended partner; new API key), an OpenAI embeddings key, or a local model in the worker (no external calls, more CPU). Trigram similarity covers near-identical titles until then.
 
 - **Project-level roles** ("members and roles per project"): today the organization role applies to every project. Proposal for Phase 7: optional per-project role override.
 - **i18n**: strings are English in components. Proposal: introduce `next-intl` in Phase 7 and extract strings then.

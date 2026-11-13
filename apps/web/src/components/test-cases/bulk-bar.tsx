@@ -1,5 +1,5 @@
 'use client';
-import { Tag, Trash2, X } from 'lucide-react';
+import { Check, Tag, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   humanize,
@@ -25,10 +25,13 @@ export function BulkBar({
   projectId,
   ids,
   onClear,
+  reviewMode = false,
 }: {
   projectId: string;
   ids: string[];
   onClear: () => void;
+  /** Review queue: show one-click Approve / Reject. */
+  reviewMode?: boolean;
 }) {
   const bulk = useBulkTestCases(projectId);
   const suites = useSuites(projectId);
@@ -102,6 +105,26 @@ export function BulkBar({
       className="sticky bottom-4 z-20 mx-auto flex w-fit max-w-full flex-wrap items-center gap-1 rounded-xl border bg-popover p-1.5 shadow-lg"
     >
       <span className="px-2 text-sm font-medium">{ids.length} selected</span>
+      {reviewMode && canApprove && (
+        <Button
+          size="sm"
+          onClick={() =>
+            run({ action: 'setStatus', ids, status: 'APPROVED' }, `Approved ${n}`, 'status')
+          }
+        >
+          <Check /> Approve
+        </Button>
+      )}
+      {reviewMode && canWrite && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-destructive hover:text-destructive"
+          onClick={() => run({ action: 'delete', ids }, `Rejected ${n}`)}
+        >
+          <X /> Reject
+        </Button>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button size="sm" variant="ghost" disabled={!canWrite && !canApprove}>

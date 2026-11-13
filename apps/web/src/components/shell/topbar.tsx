@@ -1,7 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
-import { Bell, Bot, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
+import { Bell, Sparkles, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -19,30 +19,9 @@ import {
 import { useMe } from '@/hooks/queries';
 import { signOut } from '@/lib/auth-client';
 import { MobileNav } from './mobile-nav';
+import { AgentActivity } from '@/components/ai/agent-activity';
+import { useCurrentProject } from '@/hooks/queries';
 import { useUiState } from './ui-state';
-
-/** Shows what AI agents are doing. Agents arrive in Phase 3; until then it reports idle. */
-function AgentActivity() {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label="AI agent activity: idle">
-          <span className="relative">
-            <Bot className="size-4" />
-            <span className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-muted-foreground/60 ring-2 ring-background" />
-          </span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-72">
-        <p className="text-sm font-medium">AI agents</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          No agents running. Progress of test case generation, bug drafting and reports will show
-          here.
-        </p>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 function Notifications() {
   return (
@@ -64,7 +43,8 @@ function Notifications() {
 
 export function Topbar({ children }: { children?: React.ReactNode }) {
   const { data: me } = useMe();
-  const { setPaletteOpen } = useUiState();
+  const { setPaletteOpen, copilotOpen, setCopilotOpen } = useUiState();
+  const { project } = useCurrentProject();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
   const qc = useQueryClient();
@@ -97,6 +77,19 @@ export function Topbar({ children }: { children?: React.ReactNode }) {
       >
         <Search />
       </Button>
+      {project && (
+        <Button
+          variant={copilotOpen ? 'secondary' : 'ghost'}
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setCopilotOpen(!copilotOpen)}
+          aria-pressed={copilotOpen}
+        >
+          <Sparkles className="size-4 text-violet-500" />{' '}
+          <span className="hidden md:inline">Copilot</span>
+          <Kbd className="hidden md:inline-flex">⌘J</Kbd>
+        </Button>
+      )}
       <AgentActivity />
       <Notifications />
       <DropdownMenu>

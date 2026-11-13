@@ -1,17 +1,53 @@
 'use client';
 import { useState } from 'react';
-import { ExternalLink, FileText, Link2, Loader2, Sparkles, Trash2 } from 'lucide-react';
+import { ExternalLink, FileText, Link2, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tooltip } from '@/components/ui/tooltip';
+import { AiJobButton } from '@/components/ai/ai-button';
+import { useLatestJob } from '@/hooks/ai';
 import { UploadZone } from '@/components/requirements/upload-zone';
 import { useCurrentProject } from '@/hooks/queries';
 import { useAddLinkSource, useDeleteSource, useRequirements, useSources } from '@/hooks/qa';
 import { useCan } from '@/hooks/use-permission';
 import { timeAgo } from '@/lib/utils';
+
+function SourceStatus({ status }: { status: string }) {
+  const map: Record<
+    string,
+    { label: string; variant: 'secondary' | 'warning' | 'success' | 'destructive' }
+  > = {
+    UPLOADED: { label: 'Not analyzed', variant: 'secondary' },
+    PROCESSING: { label: 'Analyzing', variant: 'warning' },
+    PROCESSED: { label: 'Analyzed', variant: 'success' },
+    FAILED: { label: 'Analysis failed', variant: 'destructive' },
+  };
+  const m = map[status] ?? map.UPLOADED!;
+  return <Badge variant={m.variant}>{m.label}</Badge>;
+}
+
+function SourceAnalyzeButton({
+  projectId,
+  sourceId,
+  analyzed,
+}: {
+  projectId: string;
+  sourceId: string;
+  analyzed: boolean;
+}) {
+  const job = useLatestJob(projectId, sourceId, 'analyze-source');
+  return (
+    <AiJobButton
+      projectId={projectId}
+      agent="requirement"
+      input={{ kind: 'analyze-source', sourceId }}
+      job={job}
+      label={analyzed ? 'Re-analyze' : 'Analyze'}
+    />
+  );
+}
 
 function formatSize(bytes: number) {
   return bytes < 1024 * 1024
@@ -60,8 +96,8 @@ export default function RequirementsIndexPage() {
         <div className="text-center">
           <h2 className="font-semibold">Start with your requirements</h2>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Upload a requirement document to keep it with the project. AI will split it into
-            requirements and draft test cases from it (Phase 3). Or press{' '}
+            Upload a requirement document and press Analyze: the Requirement Agent drafts
+            requirements with acceptance criteria and lists questions for the client. Or press{' '}
             <kbd className="rounded border px-1 text-xs">C</kbd> to write one yourself.
           </p>
         </div>
@@ -126,17 +162,33 @@ export default function RequirementsIndexPage() {
                     {timeAgo(s.createdAt)}
                     {s._count.requirements > 0 && ` · ${s._count.requirements} requirements`}
                   </div>
+                  {s.analysis && (
+                    <details className="mt-1 text-xs">
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                        AI summary
+                        {s.analysis.documentQuestions.length
+                          ? ` · ${s.analysis.documentQuestions.length} open questions`
+                          : ''}
+                      </summary>
+                      <p className="mt-1">{s.analysis.summary}</p>
+                      {s.analysis.documentQuestions.length > 0 && (
+                        <ol className="mt-1 list-decimal pl-5">
+                          {s.analysis.documentQuestions.map((q) => (
+                            <li key={q}>{q}</li>
+                          ))}
+                        </ol>
+                      )}
+                    </details>
+                  )}
                 </div>
-                <Badge variant="secondary">
-                  {s.status === 'UPLOADED' ? 'Not analyzed' : s.status.toLowerCase()}
-                </Badge>
-                <Tooltip content="AI analysis arrives with the Requirement Agent (Phase 3)">
-                  <span>
-                    <Button size="sm" variant="outline" disabled>
-                      <Sparkles /> Analyze
-                    </Button>
-                  </span>
-                </Tooltip>
+                <SourceStatus status={s.status} />
+                {s.attachment && canEdit && (
+                  <SourceAnalyzeButton
+                    projectId={project.id}
+                    sourceId={s.id}
+                    analyzed={s.status === 'PROCESSED'}
+                  />
+                )}
                 {canEdit && (
                   <Button
                     size="icon-sm"

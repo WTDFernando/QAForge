@@ -1,17 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import {
-  ArrowLeft,
-  ExternalLink,
-  FileText,
-  MoreHorizontal,
-  Plus,
-  Sparkles,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { ArrowLeft, ExternalLink, FileText, MoreHorizontal, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   humanize,
@@ -39,7 +30,10 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Tooltip } from '@/components/ui/tooltip';
+import { AiJobButton } from '@/components/ai/ai-button';
+import { AiAnalysisPanel } from '@/components/requirements/ai-analysis';
+import { buildTree, descendantIds } from '@/lib/tree';
+import { useLatestJob } from '@/hooks/ai';
 import { VersionHistory } from '@/components/qa/history';
 import { InlineText } from '@/components/qa/inline-text';
 import { RichTextEditor } from '@/components/qa/rich-text';
@@ -52,6 +46,7 @@ import {
   useDeleteRequirement,
   useLinkTestCases,
   useRequirement,
+  useRequirements,
   useRestoreRequirements,
   useUnlinkTestCase,
   useUpdateRequirement,
@@ -82,6 +77,19 @@ export default function RequirementDetailPage() {
   const canEdit = useCan('requirement:write');
   const canWriteTc = useCan('testcase:write');
   const [newCriterion, setNewCriterion] = useState('');
+  const all = useRequirements(project?.id);
+  const genJob = useLatestJob(project?.id, id, 'generate-test-cases');
+  // Stories are what get test cases; for an epic/feature, generate for the stories beneath it.
+  const genIds = useMemo(() => {
+    if (!req.data) return [];
+    if (req.data.type === 'STORY') return [req.data.id];
+    const rows = all.data ?? [];
+    const kids = descendantIds(buildTree(rows), req.data.id);
+    return rows
+      .filter((x) => kids.has(x.id) && x.type === 'STORY')
+      .map((x) => x.id)
+      .slice(0, 25);
+  }, [req.data, all.data]);
 
   if (!project || !org || req.isLoading)
     return (
@@ -165,13 +173,24 @@ export default function RequirementDetailPage() {
             />
           </h2>
         </div>
-        <Tooltip content="AI test case generation arrives in Phase 3">
-          <span>
-            <Button variant="outline" disabled>
-              <Sparkles /> Generate test cases
-            </Button>
-          </span>
-        </Tooltip>
+        {canWriteTc && genIds.length > 0 && (
+          <AiJobButton
+            projectId={project.id}
+            agent="test-case-writer"
+            input={{
+              kind: 'generate-test-cases',
+              requirementIds: genIds,
+              maxCasesPerRequirement: 6,
+            }}
+            job={genJob}
+            size="default"
+            label={
+              r.type === 'STORY'
+                ? 'Generate test cases'
+                : `Generate for ${genIds.length} stor${genIds.length === 1 ? 'y' : 'ies'}`
+            }
+          />
+        )}
         {canEdit && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -325,6 +344,14 @@ export default function RequirementDetailPage() {
               </form>
             )}
           </section>
+          <AiAnalysisPanel
+            projectId={project.id}
+            r={r}
+            canEdit={canEdit}
+            onAddCriterion={(c) =>
+              save({ acceptanceCriteria: [...r.acceptanceCriteria, c] }, 'Criterion added')
+            }
+          />
           {r.source && (
             <Field label="Source">
               {r.source.attachmentId ? (

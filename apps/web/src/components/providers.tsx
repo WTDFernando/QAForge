@@ -24,7 +24,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={client}>
         <TooltipProvider delayDuration={300}>
           {children}
-          <Toaster richColors position="bottom-right" closeButton />
+          <Toaster position="bottom-right" closeButton />
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>

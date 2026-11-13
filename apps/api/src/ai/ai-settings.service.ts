@@ -33,7 +33,16 @@ export class AiSettingsService {
   }
 
   view(s: StoredAiSettings): AiSettingsView {
+    const mode = s.apiKeyEnc
+      ? 'org-key'
+      : process.env.ANTHROPIC_API_KEY
+        ? 'server-key'
+        : process.env.QAFORGE_AI_PROVIDER === 'fake'
+          ? 'demo'
+          : 'none';
     return {
+      mode,
+      ready: mode !== 'none',
       provider: 'anthropic',
       model: s.model ?? process.env.AI_DEFAULT_MODEL ?? DEFAULT_AI_MODEL,
       hasApiKey: !!s.apiKeyEnc,

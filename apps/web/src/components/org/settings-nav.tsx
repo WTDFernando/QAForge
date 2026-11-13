@@ -13,6 +13,7 @@ export function SettingsNav() {
   const tabs = [
     { href: `/${org.slug}/settings`, label: 'General' },
     { href: `/${org.slug}/settings/members`, label: 'Members' },
+    { href: `/${org.slug}/settings/ai`, label: 'AI' },
     ...(canAudit ? [{ href: `/${org.slug}/settings/audit`, label: 'Audit log' }] : []),
   ];
   return (

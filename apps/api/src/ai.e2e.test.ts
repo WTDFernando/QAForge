@@ -315,6 +315,23 @@ describe('QA Copilot', () => {
       .expect(400);
   });
 
+  it('survives clients that drop the job stream immediately', async () => {
+    const server = app.getHttpServer();
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const port = (server.address() as { port: number }).port;
+    for (let i = 0; i < 5; i++) {
+      const ctl = new AbortController();
+      const p = fetch(`http://127.0.0.1:${port}/v1/orgs/${orgId}/agent-jobs/stream`, {
+        headers: { cookie: qa.cookie.join('; ') },
+        signal: ctl.signal,
+      }).catch(() => undefined);
+      ctl.abort();
+      await p;
+    }
+    await new Promise((r) => setTimeout(r, 300));
+    await qa.agent('get', `/v1/orgs/${orgId}/ai-settings`).expect(200); // still alive
+  });
+
   it('exposes the job stream for org members only', async () => {
     await outsider.agent('get', `/v1/orgs/${orgId}/agent-jobs/stream`).expect(404);
     await request(app.getHttpServer()).get(`/v1/orgs/${orgId}/agent-jobs/stream`).expect(401);

@@ -234,7 +234,9 @@ export class AgentJobsService implements OnModuleDestroy {
     return new Observable((sub) => {
       const redis = new IORedis(env().REDIS_URL);
       redis.on('error', () => undefined);
-      void redis.subscribe(agentJobChannel(organizationId));
+      // The client may disconnect before SUBSCRIBE completes; never let that reject unhandled
+      // (an unhandled rejection would take the whole API process down).
+      redis.subscribe(agentJobChannel(organizationId)).catch(() => undefined);
       redis.on('message', (_ch, msg) => sub.next({ data: JSON.parse(msg) as AgentJobEvent }));
       // Keep proxies from closing idle connections.
       const ping = setInterval(() => sub.next({ data: { type: 'ping' } }), 25_000);

@@ -52,6 +52,9 @@ export interface AiSettingsView {
   hasApiKey: boolean;
   /** True when no org key is set but the server has ANTHROPIC_API_KEY configured. */
   usingServerKey: boolean;
+  /** Where model calls come from: org key, server key, offline demo provider, or nowhere (agents can't run). */
+  mode: 'org-key' | 'server-key' | 'demo' | 'none';
+  ready: boolean;
   monthlyBudgetUsd: number | null;
   disabledAgents: AgentId[];
 }

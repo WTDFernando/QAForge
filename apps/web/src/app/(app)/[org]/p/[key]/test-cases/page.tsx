@@ -178,8 +178,8 @@ function TestCasesWorkspace({ projectId, review }: { projectId: string; review: 
                 </div>
                 <h2 className="font-semibold">No test cases yet</h2>
                 <p className="text-sm text-muted-foreground">
-                  Write your first test case, or open a requirement and add test cases from it so
-                  coverage is tracked automatically. AI-generated drafts arrive in Phase 3.
+                  Open a requirement and press “Generate test cases” to get AI drafts for review, or
+                  write one yourself. Test cases linked to requirements count toward coverage.
                 </p>
                 {canWrite && (
                   <Button onClick={() => setCreateOpen(true)}>
@@ -205,7 +205,12 @@ function TestCasesWorkspace({ projectId, review }: { projectId: string; review: 
                 role={org.role}
               />
             )}
-            <BulkBar projectId={project.id} ids={selectedIds} onClear={() => setSelection({})} />
+            <BulkBar
+              projectId={project.id}
+              ids={selectedIds}
+              onClear={() => setSelection({})}
+              reviewMode={JSON.stringify(view.status) === JSON.stringify(REVIEW_VIEW.status)}
+            />
           </div>
           {data && data.total > 0 && (
             <div className="flex items-center justify-between gap-2 border-t px-3 py-2 text-sm text-muted-foreground">

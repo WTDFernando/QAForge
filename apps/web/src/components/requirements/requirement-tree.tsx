@@ -1,7 +1,7 @@
 'use client';
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, Layers, Puzzle, ScrollText } from 'lucide-react';
+import { ChevronRight, Layers, Puzzle, ScrollText, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import type { RequirementType } from '@qaforge/shared';
 import { useMoveRequirement } from '@/hooks/qa';
@@ -174,6 +174,9 @@ export function RequirementTree({
                 >
                   {r.title}
                 </span>
+                {r.aiGenerated && r.status === 'DRAFT' && (
+                  <Sparkles className="size-3 shrink-0 text-violet-500" aria-label="AI draft" />
+                )}
               </Link>
               <span
                 className={cn(

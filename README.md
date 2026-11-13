@@ -2,7 +2,7 @@
 
 AI-first, all-in-one QA platform: requirement → approved test cases → executed runs → logged bugs → signed release report, in one app.
 
-> Status: **Phase 2 (Requirements & test cases) complete.** See [docs/ROADMAP.md](docs/ROADMAP.md) for the phase plan and [docs/DECISIONS.md](docs/DECISIONS.md) for architecture decisions.
+> Status: **Phase 3 (AI agents) complete.** See [docs/ROADMAP.md](docs/ROADMAP.md) for the phase plan and [docs/DECISIONS.md](docs/DECISIONS.md) for architecture decisions.
 
 ## Quick start
 
@@ -33,6 +33,19 @@ Keyboard: `⌘K` / `Ctrl+K` command palette (also accepts IDs like `TC-0003`), `
 
 Uploaded files are stored in `.data/uploads` in development (`STORAGE_DRIVER=local`). Set `STORAGE_DRIVER=s3` and the `S3_*` variables to use any S3-compatible service.
 
+## AI agents
+
+Agents use Anthropic Claude (Claude Opus 5.5 by default). To turn them on, either:
+
+- sign in as an Owner/Admin, open **Settings → AI**, and paste an Anthropic API key (stored encrypted), or
+- set `ANTHROPIC_API_KEY` in `.env` for the whole server.
+
+`pnpm dev` starts the worker that runs agent jobs. To try everything without a key, set `QAFORGE_AI_PROVIDER=fake` in `.env`: agents return deterministic demo drafts and the UI shows "Offline demo mode".
+
+What you can do: **Analyze** an uploaded document (draft requirements + questions for the client), **Assess clarity** of a requirement, **Generate test cases** for a story, a feature, or all uncovered stories, **Review with AI** on a test case, and ask **QA Copilot** (⌘J / Ctrl+J) about the project. Everything AI produces is a draft in the review queue.
+
+Agent evals (real model, costs roughly $0.50-$2 per run): `pnpm --filter @qaforge/ai build && pnpm --filter @qaforge/ai eval`.
+
 ## Repository layout
 
 ```
@@ -43,7 +56,7 @@ apps/
 packages/
   db/       Prisma schema, migrations, seed
   shared/   Zod schemas, RBAC matrix, queue contracts, ID helpers (used by web + api + worker)
-  ai/       (Phase 3) provider-agnostic model adapters, agents, prompts, evals
+  ai/       agent framework: provider adapters (Claude), versioned prompts, agents, evals
   runner/   (Phase 5) Playwright UI + API execution engine
   ui/       shared design system (components live in apps/web until a 2nd consumer exists)
 infra/docker/  production Dockerfiles

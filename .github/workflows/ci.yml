@@ -37,10 +37,16 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      - name: Agent eval harness (no API calls)
+        run: pnpm --filter @qaforge/ai eval -- --fake
       - name: E2E
+        env:
+          # Deterministic offline provider: exercises the full AI pipeline without an API key.
+          QAFORGE_AI_PROVIDER: fake
         run: |
           pnpm db:deploy && pnpm db:seed
-          (cd apps/api && node dist/main.js &) 
+          (cd apps/api && node dist/main.js &)
+          (cd apps/worker && node dist/main.js &)
           (cd apps/web && pnpm start &)
           npx wait-on -t 60000 http://localhost:4000/health http://localhost:3000/login
           cd apps/web && npx playwright install --with-deps chromium && pnpm e2e

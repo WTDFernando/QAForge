@@ -134,14 +134,12 @@ export class AiProjectController {
     const events = this.copilot.chat(ctx, body);
     // Validate (settings/budget) before switching to a streaming response so errors are normal JSON.
     const first = await events.next();
-    res
-      .status(200)
-      .set({
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      });
+    res.status(200).set({
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
     res.flushHeaders();
     let closed = false;
     req.on('close', () => (closed = true));

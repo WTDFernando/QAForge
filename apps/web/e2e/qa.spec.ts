@@ -111,14 +111,14 @@ test('list: filter, review queue, bulk priority with undo, export', async ({ pag
 test('upload a requirement document', async ({ page }) => {
   await login(page, 'qa@qaforge.dev');
   await page.goto(`${PAY}/requirements`);
+  // Wait for hydration so the file input's change handler is attached.
+  await expect(page.getByRole('heading', { name: 'Sources' })).toBeVisible();
   const name = `spec-${uid()}.md`;
-  await page
-    .getByLabel('Upload requirement documents')
-    .setInputFiles({
-      name,
-      mimeType: 'text/markdown',
-      buffer: Buffer.from('# Spec\nUsers can pay.'),
-    });
+  await page.getByLabel('Upload requirement documents').setInputFiles({
+    name,
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# Spec\nUsers can pay.'),
+  });
   await expect(page.getByRole('link', { name })).toBeVisible();
 });
 

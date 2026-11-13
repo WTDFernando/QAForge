@@ -8,6 +8,8 @@ interface UiState {
   setCreateProjectOpen: (open: boolean) => void;
   mobileNavOpen: boolean;
   setMobileNavOpen: (open: boolean) => void;
+  copilotOpen: boolean;
+  setCopilotOpen: (open: boolean) => void;
   /** Context-aware "create" (the C shortcut): pages register what C creates there. */
   createAction: { label: string; run: () => void } | null;
   setCreateAction: (a: { label: string; run: () => void } | null) => void;
@@ -19,6 +21,7 @@ export function UiStateProvider({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const [createProjectOpen, setCreateProjectOpen] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+  const [copilotOpen, setCopilotOpen] = React.useState(false);
   const [createAction, setCreateAction] = React.useState<UiState['createAction']>(null);
   const value = React.useMemo(
     () => ({
@@ -28,10 +31,12 @@ export function UiStateProvider({ children }: { children: React.ReactNode }) {
       setCreateProjectOpen,
       mobileNavOpen,
       setMobileNavOpen,
+      copilotOpen,
+      setCopilotOpen,
       createAction,
       setCreateAction,
     }),
-    [paletteOpen, createProjectOpen, mobileNavOpen, createAction],
+    [paletteOpen, createProjectOpen, mobileNavOpen, copilotOpen, createAction],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

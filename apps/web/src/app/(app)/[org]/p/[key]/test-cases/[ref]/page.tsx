@@ -52,6 +52,7 @@ import { RequirementPicker } from '@/components/qa/requirement-picker';
 import { AiBadge, Ref, TestCaseStatusBadge } from '@/components/qa/status';
 import { newStep, StepsEditor, type DraftStep } from '@/components/test-cases/steps-editor';
 import { TestDataEditor, type TestDataDraft } from '@/components/test-cases/test-data-editor';
+import { TestCaseAiPanel } from '@/components/test-cases/ai-panel';
 import { useCurrentProject } from '@/hooks/queries';
 import {
   useBulkTestCases,
@@ -322,6 +323,16 @@ export default function TestCaseDetailPage() {
             readOnly={!editable}
             onChange={(e) => setDraft({ ...draft, title: e.target.value })}
             aria-label="Title"
+          />
+          <TestCaseAiPanel
+            projectId={project.id}
+            basePath={base}
+            t={t}
+            canEdit={editable}
+            onUseSteps={(steps) => {
+              setDraft({ ...draft, steps: steps.map((st) => newStep(st)) });
+              toast.info('Suggested steps loaded. Review them, then save.');
+            }}
           />
           <Tabs defaultValue="steps">
             <TabsList>

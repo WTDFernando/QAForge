@@ -127,6 +127,12 @@ export interface RequirementSourceRow {
   status: 'UPLOADED' | 'PROCESSING' | 'PROCESSED' | 'FAILED';
   createdAt: string;
   attachment: { id: string; fileName: string; contentType: string; size: number } | null;
+  analysis: {
+    summary: string;
+    documentQuestions: string[];
+    requirementCount: number;
+    jobId: string;
+  } | null;
   _count: { requirements: number };
 }
 
@@ -169,7 +175,34 @@ export interface SharedStepRow {
   usageCount: number;
 }
 
+export interface TestCaseReview {
+  verdict: 'good' | 'needs_changes';
+  score: number;
+  summary: string;
+  issues: {
+    severity: 'high' | 'medium' | 'low';
+    kind: string;
+    stepNumber: number | null;
+    message: string;
+    suggestion: string;
+  }[];
+  missingCoverage: string[];
+  suggestedSteps: { action: string; expected: string }[] | null;
+  jobId: string;
+  version: number;
+  at: string;
+}
+
+export interface TestCaseAiNotes {
+  rationale?: string;
+  coversCriteria?: string[];
+  duplicates?: { ref: string; title: string; similarity: number }[];
+  model?: string;
+  review?: TestCaseReview;
+}
+
 export interface TestCaseDetail extends Omit<TestCaseRow, 'stepCount' | 'requirements'> {
+  aiNotes: TestCaseAiNotes | null;
   preconditions: string;
   testData: { columns: string[]; rows: string[][] } | null;
   steps: {

@@ -11,7 +11,9 @@ import { useUiState } from './ui-state';
 export function MobileNav() {
   const { mobileNavOpen, setMobileNavOpen } = useUiState();
   const pathname = usePathname();
-  useEffect(() => setMobileNavOpen(false), [pathname, setMobileNavOpen]);
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname, setMobileNavOpen]);
   return (
     <DialogPrimitive.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
       <DialogPrimitive.Trigger asChild>

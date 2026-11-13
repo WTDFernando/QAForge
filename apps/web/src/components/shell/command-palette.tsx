@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import {
   Building2,
+  Sparkles,
   ClipboardCheck,
   FileText,
   FolderKanban,
@@ -36,7 +37,8 @@ import { signOut } from '@/lib/auth-client';
 import { useUiState } from './ui-state';
 
 export function CommandPalette() {
-  const { paletteOpen, setPaletteOpen, setCreateProjectOpen, createAction } = useUiState();
+  const { paletteOpen, setPaletteOpen, setCreateProjectOpen, createAction, setCopilotOpen } =
+    useUiState();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { data: me } = useMe();
@@ -129,6 +131,9 @@ export function CommandPalette() {
                   onSelect={() => run(() => router.push(`${pBase}/test-cases?view=review`))}
                 >
                   <ClipboardCheck /> Review queue
+                </CommandItem>
+                <CommandItem onSelect={() => run(() => setCopilotOpen(true))}>
+                  <Sparkles /> Ask QA Copilot <CommandShortcut>⌘J</CommandShortcut>
                 </CommandItem>
                 {requirements.data?.slice(0, 50).map((r) => (
                   <CommandItem

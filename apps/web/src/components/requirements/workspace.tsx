@@ -12,6 +12,8 @@ import { useRequirements } from '@/hooks/qa';
 import { useCan } from '@/hooks/use-permission';
 import { cn } from '@/lib/utils';
 import { CreateRequirementDialog } from './create-requirement-dialog';
+import { AiJobButton } from '@/components/ai/ai-button';
+import { useProjectAgentJobs } from '@/hooks/ai';
 import { RequirementTree } from './requirement-tree';
 
 /** Two-pane workspace: tree on the left, the selected requirement (or sources overview) on the right. */
@@ -22,6 +24,13 @@ export function RequirementsWorkspace({ children }: { children: React.ReactNode 
   const canEdit = useCan('requirement:write');
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const jobs = useProjectAgentJobs(project?.id);
+  const bulkJob = jobs.data?.find(
+    (j) =>
+      j.kind === 'generate-test-cases' &&
+      j.sourceIds.length > 1 &&
+      (j.status === 'QUEUED' || j.status === 'RUNNING'),
+  );
   useCreateAction('New requirement', canEdit ? () => setCreateOpen(true) : null);
 
   if (!project || !org)
@@ -32,6 +41,9 @@ export function RequirementsWorkspace({ children }: { children: React.ReactNode 
     );
   const basePath = `/${org.slug}/p/${project.key}`;
   const selected = reqs.data?.find((r) => r.id === id) ?? null;
+  const uncovered = (reqs.data ?? [])
+    .filter((r) => r.type === 'STORY' && r.testCaseCount === 0 && r.status !== 'OBSOLETE')
+    .map((r) => r.id);
 
   return (
     <>
@@ -51,6 +63,20 @@ export function RequirementsWorkspace({ children }: { children: React.ReactNode 
                   <Upload /> Upload
                 </a>
               </Button>
+              {uncovered.length > 0 && (
+                <AiJobButton
+                  projectId={project.id}
+                  agent="test-case-writer"
+                  size="default"
+                  input={{
+                    kind: 'generate-test-cases',
+                    requirementIds: uncovered.slice(0, 25),
+                    maxCasesPerRequirement: 6,
+                  }}
+                  job={bulkJob}
+                  label={`Generate for ${Math.min(uncovered.length, 25)} uncovered stor${uncovered.length === 1 ? 'y' : 'ies'}`}
+                />
+              )}
               <Button onClick={() => setCreateOpen(true)}>
                 <Plus /> New requirement
               </Button>

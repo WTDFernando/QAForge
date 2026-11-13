@@ -4,8 +4,10 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useCurrentOrg } from '@/hooks/queries';
+import { useAgentJobFeed } from '@/hooks/ai';
 import { CreateProjectDialog } from '@/components/projects/create-project-dialog';
 import { CommandPalette } from './command-palette';
+import { CopilotPanel } from '@/components/ai/copilot-panel';
 import { Sidebar } from './sidebar';
 import { UiStateProvider } from './ui-state';
 
@@ -14,6 +16,7 @@ export const LAST_ORG_KEY = 'qaforge:lastOrg';
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { org, notFound } = useCurrentOrg();
   const params = useParams<{ org?: string }>();
+  useAgentJobFeed(org?.id);
 
   useEffect(() => {
     if (org) {
@@ -44,6 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <CommandPalette />
+      {org && <CopilotPanel />}
       {org && <CreateProjectDialog />}
     </UiStateProvider>
   );
