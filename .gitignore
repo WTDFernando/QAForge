@@ -12,3 +12,4 @@ test-results
 playwright-report
 .data
 .test-uploads
+dump.rdb
