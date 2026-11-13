@@ -128,7 +128,9 @@ export function RequirementsWorkspace({ children }: { children: React.ReactNode 
             </p>
           )}
         </aside>
-        <section className={cn('min-w-0 flex-1', !id && 'hidden lg:block')}>{children}</section>
+        <section className={cn('min-w-0 flex-1 overflow-y-auto', !id && 'hidden lg:block')}>
+          {children}
+        </section>
       </div>
       <CreateRequirementDialog
         open={createOpen}

@@ -48,7 +48,8 @@ test('write a requirement with acceptance criteria, then add a linked test case'
   await page.getByRole('tab', { name: /Test cases/ }).click();
   await page.getByRole('button', { name: 'New test case' }).click();
   await expect(page).toHaveURL(/\/test-cases\/TC-\d{4}$/);
-  await expect(page.getByLabel('Title')).toHaveValue(title);
+  await expect(page.getByRole('tab', { name: 'Steps & data' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue(title);
   await expect(page.getByRole('link', { name: title })).toBeVisible(); // linked requirement in sidebar
 });
 
@@ -81,6 +82,7 @@ test('edit steps, save a version, submit for review and approve', async ({ page 
 test('list: filter, review queue, bulk priority with undo, export', async ({ page }) => {
   await login(page, 'lead@qaforge.dev');
   await page.goto(`${PAY}/test-cases`);
+  await page.getByLabel('Search test cases').fill('valid Visa');
   await expect(page.getByRole('link', { name: 'Pay with a valid Visa card' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Review queue' }).click();
@@ -89,7 +91,8 @@ test('list: filter, review queue, bulk priority with undo, export', async ({ pag
 
   await page.getByLabel('Search test cases').fill('TC-0001');
   await expect(page.getByRole('row')).toHaveCount(2);
-  await page.getByLabel('Search test cases').fill('');
+  // Narrow the list so the seeded cases are on the first page regardless of how much data exists.
+  await page.getByLabel('Search test cases').fill('card');
 
   await page.getByLabel('Select TC-0001').check();
   await page.getByLabel('Select TC-0002').check();
