@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
-    "@qaforge/shared": "workspace:*"
+    "@qaforge/shared": "workspace:*",
+    "@aws-sdk/client-s3": "^3.931.0"
   },
   "devDependencies": {
     "prisma": "6.19.3",

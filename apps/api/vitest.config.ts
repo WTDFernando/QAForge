@@ -15,6 +15,8 @@ export default defineConfig({
       WEB_URL: 'http://localhost:3000',
       REDIS_URL: process.env.REDIS_URL ?? 'redis://localhost:6379',
       STORAGE_DRIVER: 'local',
+      QAFORGE_AI_PROVIDER: 'fake',
+      ANTHROPIC_API_KEY: '',
       STORAGE_LOCAL_DIR: '.test-uploads',
     },
     fileParallelism: false,

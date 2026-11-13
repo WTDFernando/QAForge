@@ -1,4 +1,3 @@
-import type { Prisma } from '@qaforge/db';
 import type { AuthedRequest } from '../auth/principal';
 import type { Actor } from '../audit/audit.service';
 
@@ -20,17 +19,4 @@ export function projectCtx(req: AuthedRequest): ProjectCtx {
   };
 }
 
-/** Atomically allocate the next per-project sequence number (REQ-0001, TC-0001...). */
-export async function nextSeq(
-  tx: Prisma.TransactionClient,
-  projectId: string,
-  kind: string,
-  count = 1,
-): Promise<number> {
-  const row = await tx.projectCounter.upsert({
-    where: { projectId_kind: { projectId, kind } },
-    create: { projectId, kind, value: count },
-    update: { value: { increment: count } },
-  });
-  return row.value - count + 1;
-}
+export { nextSeq } from '@qaforge/db';

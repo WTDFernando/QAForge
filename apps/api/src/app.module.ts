@@ -11,6 +11,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProjectsModule } from './projects/projects.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { AiModule } from './ai/ai.module';
 import { EnvironmentsModule } from './environments/environments.controller';
 import { RequirementsModule } from './requirements/requirements.controller';
 import { StorageModule } from './storage/storage.module';
@@ -45,6 +46,7 @@ import { ViewsModule } from './views/views.module';
     TestCasesModule,
     ViewsModule,
     DashboardModule,
+    AiModule,
   ],
   providers: [{ provide: APP_PIPE, useClass: ZodValidationPipe }],
 })

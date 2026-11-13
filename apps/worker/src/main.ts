@@ -3,12 +3,22 @@ import IORedis from 'ioredis';
 import { QUEUES } from '@qaforge/shared';
 import { logger } from './logger';
 import { processSystemJob } from './processors';
+import { createAiProcessor } from './ai/processor';
 
 const connection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
 });
 
-const workers = [new Worker(QUEUES.system, processSystemJob, { connection, concurrency: 4 })];
+const publisher = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+
+const workers = [
+  new Worker(QUEUES.system, processSystemJob, { connection, concurrency: 4 }),
+  // AI calls are I/O bound; a few in parallel per worker process.
+  new Worker(QUEUES.ai, createAiProcessor(publisher), {
+    connection,
+    concurrency: Number(process.env.AI_CONCURRENCY ?? 4),
+  }),
+];
 
 for (const w of workers) {
   w.on('completed', (job) => logger.info({ queue: w.name, jobId: job.id }, 'job completed'));
@@ -20,6 +30,7 @@ async function shutdown(signal: string) {
   logger.info({ signal }, 'shutting down');
   await Promise.all(workers.map((w) => w.close()));
   await connection.quit();
+  await publisher.quit();
   process.exit(0);
 }
 process.on('SIGTERM', () => void shutdown('SIGTERM'));

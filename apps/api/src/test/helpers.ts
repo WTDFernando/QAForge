@@ -13,7 +13,7 @@ export async function bootTestApp(): Promise<INestApplication> {
 export interface TestUser {
   email: string;
   cookie: string[];
-  agent: (method: 'get' | 'post' | 'patch' | 'delete', url: string) => request.Test;
+  agent: (method: 'get' | 'post' | 'patch' | 'put' | 'delete', url: string) => request.Test;
 }
 
 /** Sign up a fresh user through Better Auth and return an authenticated request helper. */
