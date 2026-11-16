@@ -69,7 +69,7 @@ infra/docker/  production Dockerfiles
 | `pnpm dev` | Run everything in watch mode |
 | `pnpm build` / `typecheck` / `lint` | Turborepo pipelines |
 | `pnpm test` | Unit + API integration tests (Vitest, needs Postgres + Redis; uses DB `qaforge_test`) |
-| `pnpm --filter @qaforge/web e2e` | Playwright E2E (incl. WCAG 2.2 AA scan) against a running, seeded stack |
+| `pnpm --filter @qaforge/web e2e` | Playwright E2E (incl. WCAG 2.2 AA scan) against a running, seeded stack (start the API with `RATE_LIMIT_AUTH_PER_MIN=1000`: the tests sign in many times) |
 | `pnpm db:migrate` | Create a new migration in development |
 | `pnpm db:deploy` / `db:seed` | Apply migrations / load demo data |
 | `pnpm --filter @qaforge/api openapi` | Write `openapi.json` |

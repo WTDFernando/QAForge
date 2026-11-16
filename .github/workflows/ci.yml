@@ -43,6 +43,8 @@ jobs:
         env:
           # Deterministic offline provider: exercises the full AI pipeline without an API key.
           QAFORGE_AI_PROVIDER: fake
+          # Rate limiting stays on, but every browser test signs in from the same address.
+          RATE_LIMIT_AUTH_PER_MIN: '1000'
         run: |
           pnpm db:deploy && pnpm db:seed
           (cd apps/api && node dist/main.js &)
