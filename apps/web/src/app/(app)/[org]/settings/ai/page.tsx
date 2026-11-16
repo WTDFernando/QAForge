@@ -51,6 +51,7 @@ function SettingsForm({ orgId, current }: { orgId: string; current: AiSettingsVi
   const [apiKey, setApiKey] = useState('');
   const [budget, setBudget] = useState(current.monthlyBudgetUsd?.toString() ?? '');
   const [disabled, setDisabled] = useState<AgentId[]>(current.disabledAgents);
+  const [enabled, setEnabled] = useState(current.enabled);
 
   const submit = async (e: React.FormEvent, opts: { removeKey?: boolean } = {}) => {
     e.preventDefault();
@@ -59,6 +60,7 @@ function SettingsForm({ orgId, current }: { orgId: string; current: AiSettingsVi
       return toast.error('Budget must be a positive number or empty');
     try {
       await save.mutateAsync({
+        enabled,
         model,
         monthlyBudgetUsd: b,
         disabledAgents: disabled,
@@ -73,6 +75,21 @@ function SettingsForm({ orgId, current }: { orgId: string; current: AiSettingsVi
 
   return (
     <form onSubmit={submit} className="grid gap-5">
+      <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+        <Checkbox
+          className="mt-0.5"
+          checked={enabled}
+          onCheckedChange={(c) => setEnabled(c === true)}
+          aria-describedby="ai-enabled-hint"
+        />
+        <span>
+          <span className="font-medium">Use AI features in this organization</span>
+          <span id="ai-enabled-hint" className="block text-xs text-muted-foreground">
+            When off, no agent or copilot runs and nothing is sent to an AI provider. Existing AI
+            drafts stay as they are.
+          </span>
+        </span>
+      </label>
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField id="ai-model" label="Model" hint="Used by every agent in this organization">
           <Select value={model} onValueChange={setModel}>

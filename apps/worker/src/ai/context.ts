@@ -6,6 +6,7 @@ import {
   type ModelCall,
   type ModelProvider,
 } from '@qaforge/ai';
+import { secretValues } from '@qaforge/ai';
 import { decryptJson, getPrisma, Prisma, type AgentJob } from '@qaforge/db';
 import {
   agentJobChannel,
@@ -20,6 +21,8 @@ export const prisma = () => getPrisma();
 
 /** Organization AI settings as stored in organization.settings.ai. */
 export interface StoredAiSettings {
+  /** Master switch (default on). */
+  enabled?: boolean;
   model?: string;
   apiKeyEnc?: string | null;
   monthlyBudgetUsd?: number | null;
@@ -157,4 +160,29 @@ export async function auditAi(
       } as Prisma.InputJsonValue,
     },
   });
+}
+
+/**
+ * Everything that must never reach a model: the project's environment secrets and the org API key.
+ * Undecryptable values are skipped (they can't leak in clear text anyway).
+ */
+export async function secretsFor(projectId: string | null, settings: StoredAiSettings) {
+  const out: string[] = [];
+  const tryDecrypt = (enc: string) => {
+    try {
+      out.push(...secretValues(decryptJson<unknown>(enc)));
+    } catch {
+      /* ignore */
+    }
+  };
+  if (settings.apiKeyEnc) tryDecrypt(settings.apiKeyEnc);
+  if (projectId) {
+    const envs = await prisma().environment.findMany({
+      where: { projectId, secrets: { not: null } },
+      select: { secrets: true },
+    });
+    for (const e of envs) tryDecrypt(e.secrets!);
+  }
+  if (process.env.ANTHROPIC_API_KEY) out.push(process.env.ANTHROPIC_API_KEY);
+  return out;
 }

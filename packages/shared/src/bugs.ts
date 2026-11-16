@@ -56,6 +56,18 @@ export const envDetailsSchema = z
   })
   .default({});
 
+/** Highlight boxes on a screenshot, normalized to the image (0-1). */
+export const annotationSchema = z.object({
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  w: z.number().min(0).max(1),
+  h: z.number().min(0).max(1),
+  label: z.string().max(200).default(''),
+  source: z.enum(['ai', 'user']).default('user'),
+});
+export type Annotation = z.infer<typeof annotationSchema>;
+export const annotationsSchema = z.array(annotationSchema).max(20);
+
 export const createBugSchema = z.object({
   title: z.string().trim().min(1).max(300),
   description: richTextSchema.nullable().optional(),
@@ -72,11 +84,23 @@ export const createBugSchema = z.object({
   testRunResultId: z.uuid().nullable().optional(),
   failedStepIndex: z.number().int().min(0).nullable().optional(),
   testCaseIds: z.array(z.uuid()).max(50).default([]),
+  /** Files uploaded before the bug existed (e.g. the screenshot from quick report). */
+  attachmentIds: z.array(z.uuid()).max(20).default([]),
+  /** Highlight boxes per attachment, normalized 0-1. */
+  attachmentAnnotations: z.record(z.uuid(), annotationsSchema).default({}),
+  /** Set when the form was pre-filled by the Bug Agent; marks the bug as AI-assisted. */
+  aiJobId: z.uuid().optional(),
 });
 export type CreateBugInput = z.infer<typeof createBugSchema>;
 
 export const updateBugSchema = patchOf(
-  createBugSchema.omit({ testRunResultId: true, failedStepIndex: true }),
+  createBugSchema.omit({
+    testRunResultId: true,
+    failedStepIndex: true,
+    attachmentIds: true,
+    attachmentAnnotations: true,
+    aiJobId: true,
+  }),
 );
 export type UpdateBugInput = z.infer<typeof updateBugSchema>;
 

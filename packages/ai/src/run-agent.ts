@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type { AgentDefinition } from './agents/types';
 import { loadPrompt } from './prompts';
+import { redactText } from './redact';
 import type { ModelProvider, ProgressUpdate, StructuredResult } from './provider';
 
 export interface RunContext {
@@ -8,6 +9,8 @@ export interface RunContext {
   model: string;
   signal?: AbortSignal;
   onProgress?: (p: ProgressUpdate) => void;
+  /** Values that must never reach the model (environment secrets etc.); common credential patterns are always masked. */
+  secrets?: readonly string[];
 }
 
 export interface AgentRun<O> {
@@ -28,7 +31,9 @@ export async function runAgent<I extends z.ZodType, O extends z.ZodType>(
   const result = await ctx.provider.generateStructured({
     model: ctx.model,
     system: loadPrompt(agent.id, agent.promptVersion),
-    content: agent.buildContent(input),
+    content: agent
+      .buildContent(input)
+      .map((p) => (p.type === 'text' ? { ...p, text: redactText(p.text, ctx.secrets) } : p)),
     schema: agent.output,
     effort: agent.effort,
     signal: ctx.signal,

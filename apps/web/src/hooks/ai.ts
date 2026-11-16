@@ -146,6 +146,7 @@ const KIND_DONE: Record<StartAgentJobInput['kind'], string> = {
   'analyze-requirement': 'Clarity assessment ready',
   'generate-test-cases': 'Test case drafts ready for review',
   'review-test-case': 'AI review ready',
+  'draft-bug': 'Bug report draft ready',
 };
 
 /**

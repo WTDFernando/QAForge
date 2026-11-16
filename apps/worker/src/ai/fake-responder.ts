@@ -86,6 +86,30 @@ export function fakeResponder(req: StructuredRequest<z.ZodType>): unknown {
       coverageNotes: 'Fake writer output.',
     };
   }
+  if (req.system.includes('Bug Agent')) {
+    const note = /<note>\n([\s\S]*?)\n<\/note>/.exec(text)?.[1]?.trim() ?? 'Something went wrong';
+    const url = /Page URL: (.*)/.exec(text)?.[1];
+    const hasImage = req.content.some((p) => p.type === 'image');
+    const first = note.split(/[.!?\n]/)[0]!.trim();
+    return {
+      title: first.charAt(0).toUpperCase() + first.slice(1, 120),
+      summary: `Fake draft from the note: ${note.slice(0, 200)}`,
+      stepsToReproduce: [
+        url && url !== '(not given)' ? `Open ${url}` : '[Open the affected page]',
+        '[Perform the action described in the note]',
+      ],
+      expectedResult: '[Expected behaviour not stated]',
+      actualResult: note,
+      severity: /crash|error|500|lost|cannot|can't/i.test(note) ? 'CRITICAL' : 'MAJOR',
+      priority: 'HIGH',
+      component: null,
+      environment: { browser: null, os: null, device: null, viewport: null },
+      highlight: hasImage ? { x: 0.25, y: 0.3, w: 0.5, h: 0.2, label: 'Problem area' } : null,
+      missingInfo: ['Which account or data was used?'],
+      confidence: hasImage ? 0.7 : 0.45,
+      rationale: 'Fake Bug Agent output based only on the note.',
+    };
+  }
   // Reviewer
   return {
     verdict: 'needs_changes',

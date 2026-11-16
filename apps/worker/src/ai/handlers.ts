@@ -5,6 +5,8 @@ import {
   type StartAgentJobInput,
 } from '@qaforge/shared';
 import {
+  bugAgent,
+  parseUserAgent,
   requirementAgent,
   runAgent,
   testCaseReviewerAgent,
@@ -24,6 +26,8 @@ export interface HandlerCtx {
   /** Map raw model progress to a 10-90% bar; message is shown in the agent indicator. */
   progress: (p: ProgressUpdate, expectedChars: number, message: string) => void;
   signal: AbortSignal;
+  /** Never sent to the model (environment secrets, API keys); redacted from every prompt. */
+  secrets: string[];
 }
 
 export interface HandlerResult {
@@ -111,6 +115,7 @@ async function analyzeSource(
       provider: ctx.provider,
       model: ctx.model,
       signal: ctx.signal,
+      secrets: ctx.secrets,
       onProgress: (p) => ctx.progress(p, 12000, 'Reading the document'),
     },
   );
@@ -232,6 +237,7 @@ async function analyzeRequirement(
       provider: ctx.provider,
       model: ctx.model,
       signal: ctx.signal,
+      secrets: ctx.secrets,
       onProgress: (p) => ctx.progress(p, 1500, 'Assessing clarity'),
     },
   );
@@ -313,6 +319,7 @@ async function generateTestCases(
       provider: ctx.provider,
       model: ctx.model,
       signal: ctx.signal,
+      secrets: ctx.secrets,
       onProgress: (p) =>
         ctx.progress(
           p,
@@ -474,6 +481,7 @@ async function reviewTestCase(
       provider: ctx.provider,
       model: ctx.model,
       signal: ctx.signal,
+      secrets: ctx.secrets,
       onProgress: (p) => ctx.progress(p, 2000, 'Reviewing'),
     },
   );
@@ -510,6 +518,128 @@ async function reviewTestCase(
   };
 }
 
+async function draftBug(
+  ctx: HandlerCtx,
+  input: Extract<StartAgentJobInput, { kind: 'draft-bug' }>,
+): Promise<HandlerResult> {
+  const { job } = ctx;
+  const db = prisma();
+  const project = await db.project.findUniqueOrThrow({ where: { id: job.projectId! } });
+  let image: { mediaType: 'image/png' | 'image/jpeg' | 'image/webp'; base64: string } | null = null;
+  if (input.attachmentId) {
+    const a = await db.attachment.findFirst({
+      where: { id: input.attachmentId, projectId: project.id },
+    });
+    if (!a) throw new JobError('The screenshot was deleted');
+    if (a.scanStatus === 'INFECTED') throw new JobError('The screenshot failed the malware scan');
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(a.contentType))
+      throw new JobError('Only PNG, JPEG or WebP screenshots can be analyzed');
+    image = {
+      mediaType: a.contentType as 'image/png',
+      base64: (await createStorage().read(a.storageKey)).toString('base64'),
+    };
+  }
+  // Name and base URL only: environment variables and secrets never go to the model.
+  const environment = input.environmentId
+    ? await db.environment.findFirst({
+        where: { id: input.environmentId, projectId: project.id },
+        select: { name: true, baseUrl: true },
+      })
+    : null;
+  const components = await db.bug.findMany({
+    where: { projectId: project.id, deletedAt: null, component: { not: null } },
+    distinct: ['component'],
+    select: { component: true },
+    take: 100,
+  });
+  const ua = parseUserAgent(input.userAgent);
+  const run = await runAgent(
+    bugAgent,
+    {
+      projectName: project.name,
+      note: input.note,
+      pageUrl: input.pageUrl ?? null,
+      browser: ua.browser,
+      os: ua.os,
+      environment,
+      components: components.map((c) => c.component!),
+      image,
+    },
+    {
+      provider: ctx.provider,
+      model: ctx.model,
+      signal: ctx.signal,
+      secrets: ctx.secrets,
+      onProgress: (p) => ctx.progress(p, 1800, 'Drafting the bug report'),
+    },
+  );
+  await recordUsage(job, ctx.provider, run.call);
+  if (await cancelled(job.id)) return { summary: 'Cancelled', output: null };
+
+  // Duplicate check before the tester files it: trigram similarity against open bugs.
+  const duplicates = (
+    await db.$queryRaw<
+      { id: string; seq: number; title: string; status: string; similarity: number }[]
+    >`
+      SELECT id, seq, title, status::text AS status, similarity(title, ${run.output.title})::float AS similarity
+      FROM bug WHERE "projectId" = ${project.id}::uuid AND "deletedAt" IS NULL
+        AND status <> 'CLOSED' AND similarity(title, ${run.output.title}) > 0.3
+      ORDER BY similarity DESC LIMIT 5`
+  ).map((d) => ({
+    id: d.id,
+    ref: formatRef('bug', d.seq),
+    title: d.title,
+    status: d.status,
+    similarity: Math.round(d.similarity * 100) / 100,
+  }));
+
+  await db.$transaction((tx) =>
+    auditAi(tx, job, {
+      entityType: 'project',
+      entityId: project.id,
+      action: 'draft_bug',
+      metadata: {
+        attachmentId: input.attachmentId ?? null,
+        confidence: run.output.confidence,
+        duplicates: duplicates.length,
+      },
+    }),
+  );
+  const o = run.output;
+  return {
+    summary: `Bug draft ready: ${o.title}${duplicates.length ? ` · ${duplicates.length} possible duplicate${duplicates.length === 1 ? '' : 's'}` : ''}`,
+    output: {
+      draft: {
+        title: o.title,
+        summary: o.summary,
+        stepsToReproduce: o.stepsToReproduce,
+        expectedResult: o.expectedResult,
+        actualResult: o.actualResult,
+        severity: o.severity,
+        priority: o.priority,
+        component: o.component,
+        envDetails: Object.fromEntries(
+          Object.entries({
+            browser: o.environment.browser,
+            os: o.environment.os,
+            device: o.environment.device,
+            viewport: o.environment.viewport,
+            url: input.pageUrl,
+          }).filter(([, v]) => v),
+        ),
+        environmentId: input.environmentId ?? null,
+        attachmentId: input.attachmentId ?? null,
+        annotations: o.highlight ? [{ ...o.highlight, source: 'ai' }] : [],
+      },
+      confidence: o.confidence,
+      rationale: o.rationale,
+      missingInfo: o.missingInfo,
+      duplicates,
+      dropped: run.dropped,
+    },
+  };
+}
+
 async function cancelled(jobId: string) {
   const j = await prisma().agentJob.findUnique({ where: { id: jobId }, select: { status: true } });
   return j?.status === 'CANCELLED';
@@ -526,5 +656,7 @@ export function handle(ctx: HandlerCtx): Promise<HandlerResult> {
       return generateTestCases(ctx, input);
     case 'review-test-case':
       return reviewTestCase(ctx, input);
+    case 'draft-bug':
+      return draftBug(ctx, input);
   }
 }

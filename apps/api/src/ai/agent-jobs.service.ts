@@ -30,7 +30,18 @@ const KIND_PERMISSION = {
   'analyze-requirement': 'requirement:write',
   'generate-test-cases': 'testcase:write',
   'review-test-case': 'testcase:read',
+  'draft-bug': 'bug:write',
 } as const;
+
+const SOURCE_TYPE = {
+  'analyze-source': 'requirement_source',
+  'analyze-requirement': 'requirement',
+  'generate-test-cases': 'requirement',
+  'review-test-case': 'test_case',
+  'draft-bug': 'attachment',
+} as const;
+
+const SCREENSHOT_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
 export function toEvent(job: AgentJob): AgentJobEvent {
   return {
@@ -73,6 +84,7 @@ export class AgentJobsService implements OnModuleDestroy {
     if (!hasPermission(ctx.role, KIND_PERMISSION[input.kind]))
       throw new ForbiddenException('Your role cannot run this agent here');
     const stored = await this.settings.stored(ctx.organizationId);
+    this.settings.assertEnabled(stored);
     if (stored.disabledAgents?.includes(agent))
       throw new BadRequestException('This agent is disabled for your organization');
     if (!this.settings.isConfigured(stored))
@@ -85,7 +97,7 @@ export class AgentJobsService implements OnModuleDestroy {
     ) {
       throw new BadRequestException("This month's AI budget has been reached");
     }
-    const sourceIds = await this.resolveSources(ctx.projectId, input);
+    const sourceIds = await this.resolveSources(ctx, input);
 
     // One active job per source item avoids duplicate drafts from double clicks.
     const active = await this.prisma.client.agentJob.findFirst({
@@ -103,12 +115,7 @@ export class AgentJobsService implements OnModuleDestroy {
         organizationId: ctx.organizationId,
         projectId: ctx.projectId,
         agent,
-        sourceType:
-          input.kind === 'analyze-source'
-            ? 'requirement_source'
-            : input.kind === 'review-test-case'
-              ? 'test_case'
-              : 'requirement',
+        sourceType: SOURCE_TYPE[input.kind],
         sourceIds,
         input: input as Prisma.InputJsonValue,
         progressMessage: 'Queued',
@@ -131,8 +138,9 @@ export class AgentJobsService implements OnModuleDestroy {
   }
 
   /** Validate that every referenced item exists in this project. */
-  private async resolveSources(projectId: string, input: StartAgentJobInput): Promise<string[]> {
+  private async resolveSources(ctx: ProjectCtx, input: StartAgentJobInput): Promise<string[]> {
     const db = this.prisma.client;
+    const projectId = ctx.projectId;
     switch (input.kind) {
       case 'analyze-source': {
         const s = await db.requirementSource.findFirst({
@@ -166,6 +174,26 @@ export class AgentJobsService implements OnModuleDestroy {
         });
         if (!t) throw new NotFoundException('Test case not found');
         return [t.id];
+      }
+      case 'draft-bug': {
+        if (input.environmentId) {
+          const e = await db.environment.findFirst({
+            where: { id: input.environmentId, projectId },
+          });
+          if (!e) throw new NotFoundException('Environment not found');
+        }
+        if (!input.attachmentId) return [];
+        // Only the uploader's own screenshot that isn't attached elsewhere yet (or is on a bug in this project).
+        const a = await db.attachment.findFirst({
+          where: { id: input.attachmentId, projectId },
+        });
+        if (!a || (a.entityType === null && a.createdById !== ctx.actor.id))
+          throw new NotFoundException('Screenshot not found');
+        if (!SCREENSHOT_TYPES.includes(a.contentType))
+          throw new BadRequestException('Only PNG, JPEG or WebP screenshots can be analyzed');
+        if (a.scanStatus === 'INFECTED')
+          throw new BadRequestException('This file failed the malware scan');
+        return [a.id];
       }
     }
   }

@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
-import { costUsd, loadPrompt, toTokenUsage } from '@qaforge/ai';
+import { costUsd, loadPrompt, redactText, toTokenUsage } from '@qaforge/ai';
 import { Prisma } from '@qaforge/db';
 import {
   formatRef,
@@ -274,6 +274,7 @@ export class CopilotService {
 
   async *chat(ctx: ProjectCtx, req: CopilotRequest): AsyncGenerator<CopilotEvent> {
     const stored = await this.settings.stored(ctx.organizationId);
+    this.settings.assertEnabled(stored);
     if (stored.disabledAgents?.includes('copilot'))
       throw new BadRequestException('QA Copilot is disabled for your organization');
     if (!this.settings.isConfigured(stored))
@@ -293,7 +294,15 @@ export class CopilotService {
     }
 
     const queue: CopilotEvent[] = [];
-    const tools = this.tools(ctx, (e) => queue.push(e));
+    // Every tool result and user message is redacted before it reaches the model.
+    const secrets = await this.settings.secretsFor(ctx.projectId, stored);
+    const tools = this.tools(ctx, (e) => queue.push(e)).map((t) => ({
+      ...t,
+      run: async (i: never) => {
+        const r = await (t.run as (i: never) => Promise<unknown>)(i);
+        return typeof r === 'string' ? redactText(r, secrets) : r;
+      },
+    })) as ReturnType<CopilotService['tools']>;
     const client = new Anthropic({ apiKey: this.settings.apiKey(stored), maxRetries: 2 });
     const model = stored.model ?? process.env.AI_DEFAULT_MODEL ?? 'claude-opus-5-5';
     const project = await this.prisma.client.project.findUniqueOrThrow({
@@ -311,7 +320,10 @@ export class CopilotService {
       ],
       output_config: { effort: 'medium' },
       tools,
-      messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: req.messages.map((m) => ({
+        role: m.role,
+        content: redactText(m.content, secrets),
+      })),
       stream: true,
     });
 

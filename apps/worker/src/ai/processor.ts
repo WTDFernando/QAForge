@@ -10,6 +10,7 @@ import {
   JobError,
   loadAiSettings,
   prisma,
+  secretsFor,
   updateJob,
 } from './context';
 import { handle } from './handlers';
@@ -48,6 +49,8 @@ export function createAiProcessor(redis: IORedis) {
     const controller = new AbortController();
     try {
       const settings = await loadAiSettings(job.organizationId);
+      if (settings.enabled === false)
+        throw new JobError('AI features are turned off for this organization.');
       if (settings.disabledAgents?.includes(AGENT_FOR_KIND[input.kind]))
         throw new JobError('This agent was disabled by an Admin.');
       await assertBudget(job.organizationId, settings);
@@ -67,6 +70,7 @@ export function createAiProcessor(redis: IORedis) {
         provider,
         model,
         signal: controller.signal,
+        secrets: await secretsFor(job.projectId, settings),
         progress: (p, expected, message) => {
           const now = Date.now();
           if (now - last < 750) return;

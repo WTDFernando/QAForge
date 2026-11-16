@@ -8,6 +8,7 @@ import {
   AnthropicProvider,
   costUsd,
   FakeProvider,
+  bugAgent,
   requirementAgent,
   runAgent,
   testCaseReviewerAgent,
@@ -16,7 +17,7 @@ import {
   type ModelProvider,
 } from '../index';
 import type { z } from 'zod';
-import { requirementCases, reviewerCases, writerCases, type EvalCase } from './cases';
+import { bugCases, requirementCases, reviewerCases, writerCases, type EvalCase } from './cases';
 
 const args = process.argv.slice(2);
 const arg = (name: string) => {
@@ -39,21 +40,31 @@ const EMPTY: Record<string, unknown> = {
     missingCoverage: [],
     suggestedSteps: null,
   },
+  bug: {
+    title: '',
+    summary: '',
+    stepsToReproduce: [],
+    expectedResult: '',
+    actualResult: '',
+    severity: 'MINOR',
+    priority: 'LOW',
+    component: null,
+    environment: { browser: null, os: null, device: null, viewport: null },
+    highlight: null,
+    missingInfo: [],
+    confidence: 0,
+    rationale: '',
+  },
+};
+const MARKER: Record<string, string> = {
+  requirement: 'Requirement Agent',
+  'test-case-writer': 'Test Case Writer',
+  'test-case-reviewer': 'Test Case Reviewer',
+  bug: 'Bug Agent',
 };
 const provider: ModelProvider = fake
   ? new FakeProvider(
-      (req) =>
-        EMPTY[
-          Object.keys(EMPTY).find((k) =>
-            req.system.includes(
-              k === 'requirement'
-                ? 'Requirement Agent'
-                : k === 'test-case-writer'
-                  ? 'Test Case Writer'
-                  : 'Test Case Reviewer',
-            ),
-          )!
-        ],
+      (req) => EMPTY[Object.keys(EMPTY).find((k) => req.system.includes(MARKER[k]!))!],
     )
   : new AnthropicProvider();
 
@@ -88,6 +99,7 @@ async function main() {
     results.push(await suite(requirementAgent, requirementCases));
   if (!only || only === 'writer') results.push(await suite(testCaseWriterAgent, writerCases));
   if (!only || only === 'reviewer') results.push(await suite(testCaseReviewerAgent, reviewerCases));
+  if (!only || only === 'bug') results.push(await suite(bugAgent, bugCases));
   const pass = results.reduce((a, r) => a + r.pass, 0);
   const total = results.reduce((a, r) => a + r.total, 0);
   const cost = results.reduce((a, r) => a + r.cost, 0);

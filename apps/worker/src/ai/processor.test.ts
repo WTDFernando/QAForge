@@ -232,7 +232,134 @@ describe('test case jobs', () => {
   });
 });
 
+describe('draft-bug', () => {
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  it('drafts a report with a highlight, environment facts and duplicate check, creating nothing', async () => {
+    await prisma.bug.create({
+      data: {
+        projectId,
+        seq: 7,
+        title: 'Checkout total ignores the discount code',
+        createdById: userId,
+        updatedById: userId,
+      },
+    });
+    const key = `${orgId}/${projectId}/${randomUUID()}/shot.png`;
+    await createStorage().put(key, PNG, 'image/png');
+    const shot = await prisma.attachment.create({
+      data: {
+        projectId,
+        storageKey: key,
+        fileName: 'shot.png',
+        contentType: 'image/png',
+        size: PNG.length,
+        createdById: userId,
+      },
+    });
+    const env = await prisma.environment.create({
+      data: {
+        projectId,
+        name: 'Staging',
+        baseUrl: 'https://staging.shop.test',
+        createdById: userId,
+      },
+    });
+    const bugsBefore = await prisma.bug.count({ where: { projectId } });
+    const job = await newJob(
+      {
+        kind: 'draft-bug',
+        note: 'Checkout total ignores the discount code. Total stays at 120.',
+        attachmentId: shot.id,
+        pageUrl: 'https://staging.shop.test/checkout',
+        userAgent:
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+        environmentId: env.id,
+      },
+      'bug',
+      [shot.id],
+    );
+    await process_(bull(job.id));
+    const done = await prisma.agentJob.findUniqueOrThrow({ where: { id: job.id } });
+    expect(done.status).toBe('SUCCEEDED');
+    expect(done.summary).toMatch(
+      /^Bug draft ready: Checkout total ignores the discount code · 1 possible duplicate$/,
+    );
+    const out = done.output as {
+      draft: Record<string, unknown> & { annotations: { source: string; x: number }[] };
+      duplicates: { ref: string }[];
+      confidence: number;
+    };
+    expect(out.draft).toMatchObject({
+      severity: 'MAJOR',
+      attachmentId: shot.id,
+      environmentId: env.id,
+      envDetails: {
+        browser: 'Chrome 141',
+        os: 'Windows',
+        url: 'https://staging.shop.test/checkout',
+      },
+      stepsToReproduce: [
+        'Open https://staging.shop.test/checkout',
+        '[Perform the action described in the note]',
+      ],
+    });
+    expect(out.draft.annotations[0]).toMatchObject({ source: 'ai', x: 0.25 });
+    expect(out.duplicates[0]!.ref).toBe('BUG-0007');
+    expect(out.confidence).toBe(0.7);
+    // A draft only: the tester files it.
+    expect(await prisma.bug.count({ where: { projectId } })).toBe(bugsBefore);
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { action: 'draft_bug', projectId },
+    });
+    expect(audit).toMatchObject({ actorType: 'AI_AGENT' });
+  });
+
+  it('works from the note alone and rejects non-image files', async () => {
+    const job = await newJob({ kind: 'draft-bug', note: 'Save button does nothing' }, 'bug', []);
+    await process_(bull(job.id));
+    const done = await prisma.agentJob.findUniqueOrThrow({ where: { id: job.id } });
+    expect((done.output as { draft: { annotations: unknown[] } }).draft.annotations).toEqual([]);
+
+    const key = `${orgId}/${projectId}/${randomUUID()}/notes.txt`;
+    await createStorage().put(key, Buffer.from('hi'), 'text/plain');
+    const txt = await prisma.attachment.create({
+      data: {
+        projectId,
+        storageKey: key,
+        fileName: 'notes.txt',
+        contentType: 'text/plain',
+        size: 2,
+        createdById: userId,
+      },
+    });
+    const bad = await newJob({ kind: 'draft-bug', note: 'Broken', attachmentId: txt.id }, 'bug', [
+      txt.id,
+    ]);
+    await expect(process_(bull(bad.id))).rejects.toBeInstanceOf(UnrecoverableError);
+    expect((await prisma.agentJob.findUniqueOrThrow({ where: { id: bad.id } })).error).toBe(
+      'Only PNG, JPEG or WebP screenshots can be analyzed',
+    );
+  });
+});
+
 describe('job guards', () => {
+  it('fails without retrying when AI is turned off for the organization', async () => {
+    await prisma.organization.update({
+      where: { id: orgId },
+      data: { settings: { ai: { enabled: false } } },
+    });
+    const job = await newJob({ kind: 'draft-bug', note: 'Anything at all' }, 'bug', []);
+    await expect(process_(bull(job.id))).rejects.toBeInstanceOf(UnrecoverableError);
+    expect((await prisma.agentJob.findUniqueOrThrow({ where: { id: job.id } })).error).toBe(
+      'AI features are turned off for this organization.',
+    );
+    await prisma.organization.update({ where: { id: orgId }, data: { settings: {} } });
+  });
+
   it('skips cancelled jobs', async () => {
     const job = await newJob(
       { kind: 'analyze-requirement', requirementId: randomUUID() },

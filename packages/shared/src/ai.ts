@@ -4,6 +4,7 @@ export const AGENT_IDS = [
   'requirement',
   'test-case-writer',
   'test-case-reviewer',
+  'bug',
   'copilot',
 ] as const;
 export type AgentId = (typeof AGENT_IDS)[number];
@@ -22,6 +23,11 @@ export const AGENT_INFO: Record<AgentId, { name: string; description: string }> 
     name: 'Test Case Reviewer',
     description: 'Checks a test case for vague steps, missing results and coverage gaps.',
   },
+  bug: {
+    name: 'Bug Agent',
+    description:
+      'Turns a screenshot and a one-line note into a bug report draft, highlights the problem and checks for duplicates.',
+  },
   copilot: {
     name: 'QA Copilot',
     description: 'Answers questions about the project and can start the other agents.',
@@ -38,6 +44,8 @@ export const DEFAULT_AI_MODEL = AI_MODELS[0].id;
 
 /** PUT body. apiKey is write-only: a string sets it, null removes it, omitted keeps it. */
 export const aiSettingsSchema = z.object({
+  /** Master switch: false turns every AI feature off for the organization. */
+  enabled: z.boolean().default(true),
   model: z.enum(AI_MODELS.map((m) => m.id) as [string, ...string[]]),
   apiKey: z.string().trim().min(20).max(500).nullable().optional(),
   monthlyBudgetUsd: z.number().min(0).max(1_000_000).nullable(),
@@ -54,6 +62,9 @@ export interface AiSettingsView {
   usingServerKey: boolean;
   /** Where model calls come from: org key, server key, offline demo provider, or nowhere (agents can't run). */
   mode: 'org-key' | 'server-key' | 'demo' | 'none';
+  /** Organization master switch. */
+  enabled: boolean;
+  /** enabled && a model source is available. */
   ready: boolean;
   monthlyBudgetUsd: number | null;
   disabledAgents: AgentId[];
@@ -72,6 +83,15 @@ export const startAgentJobSchema = z.discriminatedUnion('kind', [
   }),
   /** Test Case Reviewer on one test case: suggestions only. */
   z.object({ kind: z.literal('review-test-case'), testCaseId: z.uuid() }),
+  /** Bug Agent: screenshot + one line -> a bug report draft (the user reviews and submits it). */
+  z.object({
+    kind: z.literal('draft-bug'),
+    note: z.string().trim().min(3).max(2000),
+    attachmentId: z.uuid().optional(),
+    pageUrl: z.string().max(2000).optional(),
+    userAgent: z.string().max(500).optional(),
+    environmentId: z.uuid().optional(),
+  }),
 ]);
 export type StartAgentJobInput = z.infer<typeof startAgentJobSchema>;
 
@@ -80,6 +100,7 @@ export const AGENT_FOR_KIND: Record<StartAgentJobInput['kind'], AgentId> = {
   'analyze-requirement': 'requirement',
   'generate-test-cases': 'test-case-writer',
   'review-test-case': 'test-case-reviewer',
+  'draft-bug': 'bug',
 };
 
 export type AgentJobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';

@@ -284,6 +284,7 @@ export class BugsService {
         environmentId,
         testCaseIds: [...testCaseIds],
       });
+      const ai = input.aiJobId ? await this.aiDraft(tx, ctx, input.aiJobId) : null;
       const seq = await nextSeq(tx, ctx.projectId, 'bug');
       const description = input.description ?? null;
       const b = await tx.bug.create({
@@ -305,9 +306,9 @@ export class BugsService {
           testRunResultId: input.testRunResultId ?? null,
           failedStepIndex: input.failedStepIndex ?? null,
           rank: await this.rankFor(tx, ctx.projectId, 'NEW'),
-          aiGenerated: extra.aiGenerated ?? false,
-          aiNotes: extra.aiNotes,
-          aiJobId: extra.aiJobId,
+          aiGenerated: extra.aiGenerated ?? !!ai,
+          aiNotes: extra.aiNotes ?? (ai?.notes as Prisma.InputJsonValue | undefined),
+          aiJobId: extra.aiJobId ?? ai?.jobId,
           createdById: ctx.actor.id,
           updatedById: ctx.actor.id,
           testCases: {
@@ -326,10 +327,65 @@ export class BugsService {
         action: 'create',
         after: { ref: formatRef('bug', seq), title: b.title, severity: b.severity },
       });
+      await this.adoptUploads(tx, ctx, b.id, input);
       if (b.assigneeId) await this.notifyAssigned(tx, ctx, b);
       return b;
     });
     return this.present(bug);
+  }
+
+  /** The Bug Agent job that pre-filled the form: must be the caller's own finished draft-bug job. */
+  private async aiDraft(tx: Tx, ctx: ProjectCtx, jobId: string) {
+    const job = await tx.agentJob.findFirst({
+      where: { id: jobId, projectId: ctx.projectId, agent: 'bug', createdById: ctx.actor.id },
+    });
+    if (!job || job.status !== 'SUCCEEDED')
+      throw new BadRequestException('Bug Agent draft not found');
+    const out = (job.output ?? {}) as {
+      confidence?: number;
+      rationale?: string;
+      missingInfo?: string[];
+      duplicates?: { ref: string; similarity: number }[];
+    };
+    return {
+      jobId: job.id,
+      notes: {
+        confidence: out.confidence ?? null,
+        rationale: out.rationale ?? '',
+        missingInfo: out.missingInfo ?? [],
+        duplicates: (out.duplicates ?? []).map((d) => ({ ref: d.ref, similarity: d.similarity })),
+        model: job.model,
+        jobId: job.id,
+      },
+    };
+  }
+
+  /** Attach files uploaded before the bug existed (only the caller's own, still unattached). */
+  private async adoptUploads(tx: Tx, ctx: ProjectCtx, bugId: string, input: CreateBugInput) {
+    const ids = [...new Set(input.attachmentIds)];
+    if (!ids.length) return;
+    const rows = await tx.attachment.findMany({
+      where: {
+        id: { in: ids },
+        projectId: ctx.projectId,
+        entityType: null,
+        createdById: ctx.actor.id,
+      },
+      select: { id: true },
+    });
+    if (rows.length !== ids.length)
+      throw new BadRequestException('Some attachments were not found or are already attached');
+    for (const id of ids) {
+      const annotations = input.attachmentAnnotations[id];
+      await tx.attachment.update({
+        where: { id },
+        data: {
+          entityType: 'bug',
+          entityId: bugId,
+          ...(annotations ? { annotations: annotations as Prisma.InputJsonValue } : {}),
+        },
+      });
+    }
   }
 
   private notifyAssigned(tx: Tx, ctx: ProjectCtx, b: Bug) {

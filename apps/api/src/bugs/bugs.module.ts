@@ -23,6 +23,7 @@ import { z } from 'zod';
 import {
   bugQuerySchema,
   createBugSchema,
+  annotationsSchema,
   MAX_UPLOAD_BYTES,
   setBugStatusSchema,
   updateBugSchema,
@@ -60,19 +61,7 @@ export const EVIDENCE_TYPES: Record<string, string> = {
   'application/pdf': 'PDF',
 };
 
-/** Highlight boxes, normalized to the image (0-1). */
-export const annotationsSchema = z
-  .array(
-    z.object({
-      x: z.number().min(0).max(1),
-      y: z.number().min(0).max(1),
-      w: z.number().min(0).max(1),
-      h: z.number().min(0).max(1),
-      label: z.string().max(200).default(''),
-      source: z.enum(['ai', 'user']).default('user'),
-    }),
-  )
-  .max(20);
+export { annotationsSchema };
 class AnnotationsDto extends createZodDto(z.object({ annotations: annotationsSchema })) {}
 
 function parseAnnotations(raw: unknown) {
@@ -122,6 +111,29 @@ export class BugsController {
   @RequirePermission('bug:write')
   create(@Ctx() ctx: ProjectCtx, @Body() body: CreateBugDto) {
     return this.bugs.create(ctx, body);
+  }
+
+  /**
+   * Upload evidence before the bug exists (quick report): the file stays unattached and private to
+   * the uploader until it is passed in `attachmentIds` when creating the bug.
+   */
+  @Post('bugs/uploads')
+  @RequirePermission('bug:write')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } }))
+  upload(@Ctx() ctx: ProjectCtx, @UploadedFile() file: UploadedFileLike) {
+    return this.prisma.client.$transaction(async (tx) => {
+      const a = await this.attachments.store(tx, ctx, file, EVIDENCE_TYPES);
+      await this.audit.record(tx, ctx.actor, {
+        organizationId: ctx.organizationId,
+        projectId: ctx.projectId,
+        entityType: 'attachment',
+        entityId: a.id,
+        action: 'upload',
+        metadata: { fileName: a.fileName, size: a.size },
+      });
+      return a;
+    });
   }
 
   @Get('bugs/by-ref/:seq')

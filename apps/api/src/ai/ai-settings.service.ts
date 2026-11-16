@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { secretValues } from '@qaforge/ai';
 import { decryptJson, encryptJson, Prisma } from '@qaforge/db';
 import {
   DEFAULT_AI_MODEL,
@@ -11,6 +12,8 @@ import { PrismaService } from '../prisma/prisma.module';
 
 /** Stored under organization.settings.ai. The API key is encrypted and never returned. */
 export interface StoredAiSettings {
+  /** Organization master switch (absent = on). */
+  enabled?: boolean;
   model?: string;
   apiKeyEnc?: string | null;
   monthlyBudgetUsd?: number | null;
@@ -40,9 +43,11 @@ export class AiSettingsService {
         : process.env.QAFORGE_AI_PROVIDER === 'fake'
           ? 'demo'
           : 'none';
+    const enabled = s.enabled !== false;
     return {
       mode,
-      ready: mode !== 'none',
+      enabled,
+      ready: enabled && mode !== 'none',
       provider: 'anthropic',
       model: s.model ?? process.env.AI_DEFAULT_MODEL ?? DEFAULT_AI_MODEL,
       hasApiKey: !!s.apiKeyEnc,
@@ -52,11 +57,39 @@ export class AiSettingsService {
     };
   }
 
+  /** Throws when the organization turned AI off (master switch). */
+  assertEnabled(s: StoredAiSettings) {
+    if (s.enabled === false)
+      throw new BadRequestException(
+        'AI features are turned off for your organization. An Admin can turn them on in Settings > AI.',
+      );
+  }
+
   /** True when agents can call a model (org key, server key, or the offline fake provider). */
   isConfigured(s: StoredAiSettings) {
     return (
       !!s.apiKeyEnc || !!process.env.ANTHROPIC_API_KEY || process.env.QAFORGE_AI_PROVIDER === 'fake'
     );
+  }
+
+  /** Values that must never reach a model: environment secrets of the project and API keys. */
+  async secretsFor(projectId: string, s: StoredAiSettings): Promise<string[]> {
+    const out: string[] = [];
+    const add = (enc: string) => {
+      try {
+        out.push(...secretValues(decryptJson<unknown>(enc)));
+      } catch {
+        /* undecryptable: nothing to leak */
+      }
+    };
+    if (s.apiKeyEnc) add(s.apiKeyEnc);
+    if (process.env.ANTHROPIC_API_KEY) out.push(process.env.ANTHROPIC_API_KEY);
+    const envs = await this.prisma.client.environment.findMany({
+      where: { projectId, secrets: { not: null } },
+      select: { secrets: true },
+    });
+    for (const e of envs) add(e.secrets!);
+    return out;
   }
 
   apiKey(s: StoredAiSettings): string | undefined {
@@ -72,6 +105,7 @@ export class AiSettingsService {
       const settings = (org.settings ?? {}) as { ai?: StoredAiSettings };
       const before = settings.ai ?? {};
       const next: StoredAiSettings = {
+        enabled: input.enabled,
         model: input.model,
         monthlyBudgetUsd: input.monthlyBudgetUsd,
         disabledAgents: input.disabledAgents,
@@ -92,6 +126,7 @@ export class AiSettingsService {
         entityId: orgId,
         action: 'update',
         before: {
+          enabled: before.enabled !== false,
           model: before.model,
           monthlyBudgetUsd: before.monthlyBudgetUsd,
           disabledAgents: before.disabledAgents,
@@ -99,6 +134,7 @@ export class AiSettingsService {
         },
         // The key itself is never written to the audit log.
         after: {
+          enabled: next.enabled !== false,
           model: next.model,
           monthlyBudgetUsd: next.monthlyBudgetUsd,
           disabledAgents: next.disabledAgents,
