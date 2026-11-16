@@ -4,6 +4,8 @@ import { QUEUES } from '@qaforge/shared';
 import { logger } from './logger';
 import { processSystemJob } from './processors';
 import { createAiProcessor } from './ai/processor';
+import { scanningEnabled } from '@qaforge/db';
+import { createScanProcessor } from './scan';
 
 const connection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
@@ -18,6 +20,10 @@ const workers = [
     connection,
     concurrency: Number(process.env.AI_CONCURRENCY ?? 4),
   }),
+  // Malware scanning only runs when ClamAV is configured (compose profile "scan").
+  ...(scanningEnabled()
+    ? [new Worker(QUEUES.scan, createScanProcessor(), { connection, concurrency: 2 })]
+    : []),
 ];
 
 for (const w of workers) {

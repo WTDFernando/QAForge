@@ -69,6 +69,7 @@ describe('analyze-source', () => {
         fileName: 'spec.md',
         contentType: 'text/markdown',
         size: 100,
+        scanStatus: 'SKIPPED',
         createdById: userId,
       },
     });
@@ -116,6 +117,7 @@ describe('analyze-source', () => {
         fileName: 'empty.md',
         contentType: 'text/markdown',
         size: 3,
+        scanStatus: 'SKIPPED',
         createdById: userId,
       },
     });
@@ -257,6 +259,7 @@ describe('draft-bug', () => {
         fileName: 'shot.png',
         contentType: 'image/png',
         size: PNG.length,
+        scanStatus: 'CLEAN',
         createdById: userId,
       },
     });
@@ -333,6 +336,7 @@ describe('draft-bug', () => {
         fileName: 'notes.txt',
         contentType: 'text/plain',
         size: 2,
+        scanStatus: 'SKIPPED',
         createdById: userId,
       },
     });

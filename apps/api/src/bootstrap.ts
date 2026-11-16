@@ -5,10 +5,12 @@ import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swag
 import { toNodeHandler } from 'better-auth/node';
 import express from 'express';
 import helmet from 'helmet';
+import IORedis from 'ioredis';
 import { Logger } from 'nestjs-pino';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
 import { AppModule } from './app.module';
 import { AUTH, type Auth } from './auth/auth';
+import { defaultRules, rateLimit } from './common/rate-limit';
 import { env } from './config/env';
 
 export async function createApp(opts: { logger?: boolean } = {}): Promise<INestApplication> {
@@ -17,6 +19,28 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<INestA
 
   app.use(helmet({ contentSecurityPolicy: false }));
   app.enableCors({ origin: [env().WEB_URL], credentials: true });
+  // The web app (Next) proxies /v1 and /api/auth: trust one hop so req.ip is the browser's address.
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
+
+  const e = env();
+  if (e.RATE_LIMIT_ENABLED ?? e.NODE_ENV !== 'test') {
+    const redis = new IORedis(e.REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 });
+    redis.on('error', () => undefined);
+    app.use(
+      rateLimit(
+        redis,
+        defaultRules({
+          api: e.RATE_LIMIT_API_PER_MIN,
+          auth: e.RATE_LIMIT_AUTH_PER_MIN,
+          ai: e.RATE_LIMIT_AI_PER_MIN,
+        }),
+      ),
+    );
+    app.getHttpServer().on('close', () => redis.disconnect());
+  }
 
   // Better Auth must receive the raw body, so it is mounted before the JSON parser.
   const auth = app.get<Auth>(AUTH);

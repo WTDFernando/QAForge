@@ -18,4 +18,8 @@ export class StorageService implements StorageDriver {
   delete(key: string) {
     return this.driver.delete(key);
   }
+  /** S3 presigned URLs; undefined for local disk (served through signed API URLs). */
+  get presign(): StorageDriver['presign'] {
+    return this.driver.presign?.bind(this.driver);
+  }
 }

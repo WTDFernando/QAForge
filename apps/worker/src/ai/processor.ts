@@ -10,6 +10,7 @@ import {
   JobError,
   loadAiSettings,
   prisma,
+  ScanPendingError,
   secretsFor,
   updateJob,
 } from './context';
@@ -19,6 +20,7 @@ import { handle } from './handlers';
 export function friendlyError(e: unknown): { message: string; retry: boolean } {
   if (e instanceof JobError || e instanceof ConfigError)
     return { message: e.message, retry: false };
+  if (e instanceof ScanPendingError) return { message: `${e.message}…`, retry: true };
   if (e instanceof RefusalError)
     return {
       message: `The AI model declined this request${e.category ? ` (${e.category})` : ''}. Try rephrasing the source or splitting it.`,

@@ -3,11 +3,18 @@ import {
   AnthropicProvider,
   costUsd,
   FakeProvider,
+  secretValues,
   type ModelCall,
   type ModelProvider,
 } from '@qaforge/ai';
-import { secretValues } from '@qaforge/ai';
-import { decryptJson, getPrisma, Prisma, type AgentJob } from '@qaforge/db';
+import {
+  createStorage,
+  decryptJson,
+  getPrisma,
+  Prisma,
+  type AgentJob,
+  type Attachment,
+} from '@qaforge/db';
 import {
   agentJobChannel,
   DEFAULT_AI_MODEL,
@@ -31,6 +38,21 @@ export interface StoredAiSettings {
 
 /** Errors that should fail the job immediately (no retries) with a message for the user. */
 export class JobError extends Error {}
+
+/** The file is still being scanned for malware: retry later. */
+export class ScanPendingError extends Error {
+  constructor() {
+    super('Waiting for the malware scan of the file');
+  }
+}
+
+/** Read an uploaded file for an agent, honouring the malware scan (files are unusable until clean). */
+export async function readScanned(a: Pick<Attachment, 'storageKey' | 'scanStatus'>) {
+  if (a.scanStatus === 'INFECTED') throw new JobError('The file failed the malware scan');
+  if (a.scanStatus === 'FAILED') throw new JobError('The file could not be scanned for malware');
+  if (a.scanStatus === 'PENDING') throw new ScanPendingError();
+  return createStorage().read(a.storageKey);
+}
 
 export async function loadAiSettings(organizationId: string) {
   const org = await prisma().organization.findUniqueOrThrow({

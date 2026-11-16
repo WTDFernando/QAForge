@@ -15,8 +15,8 @@ import {
   type ProgressUpdate,
   type RequirementAgentOutput,
 } from '@qaforge/ai';
-import { createStorage, nextSeq, Prisma, type AgentJob } from '@qaforge/db';
-import { auditAi, JobError, prisma, recordUsage } from './context';
+import { nextSeq, Prisma, type AgentJob } from '@qaforge/db';
+import { auditAi, JobError, prisma, readScanned, recordUsage } from './context';
 import { extractDocument, UnsupportedDocumentError } from './documents';
 
 export interface HandlerCtx {
@@ -85,7 +85,7 @@ async function analyzeSource(
   let doc;
   try {
     doc = await extractDocument(
-      await createStorage().read(source.attachment.storageKey),
+      await readScanned(source.attachment),
       source.attachment.contentType,
       source.attachment.fileName,
     );
@@ -531,12 +531,11 @@ async function draftBug(
       where: { id: input.attachmentId, projectId: project.id },
     });
     if (!a) throw new JobError('The screenshot was deleted');
-    if (a.scanStatus === 'INFECTED') throw new JobError('The screenshot failed the malware scan');
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(a.contentType))
       throw new JobError('Only PNG, JPEG or WebP screenshots can be analyzed');
     image = {
       mediaType: a.contentType as 'image/png',
-      base64: (await createStorage().read(a.storageKey)).toString('base64'),
+      base64: (await readScanned(a)).toString('base64'),
     };
   }
   // Name and base URL only: environment variables and secrets never go to the model.

@@ -5,6 +5,8 @@ export { diffChanges } from './audit';
 export { decryptJson, encryptJson } from './crypto';
 export { createStorage, LocalDiskDriver, S3Driver, type StorageDriver } from './storage';
 export { nextSeq } from './sequence';
+export { signFileToken, verifyFileToken, type Disposition } from './signed-url';
+export { scanBuffer, scanningEnabled, type ScanResult } from './clamav';
 export type { FieldChanges } from './audit';
 
 const globalForPrisma = globalThis as unknown as { __qaforgePrisma?: PrismaClient };

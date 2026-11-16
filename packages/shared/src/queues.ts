@@ -4,7 +4,13 @@ export const QUEUES = {
   runs: 'test-runs',
   reports: 'reports',
   system: 'system',
+  /** Malware scan of uploaded files (ClamAV). */
+  scan: 'file-scan',
 } as const;
+
+export interface ScanJob {
+  attachmentId: string;
+}
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
 export interface JobProgress {

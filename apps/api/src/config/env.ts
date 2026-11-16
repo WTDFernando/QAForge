@@ -25,6 +25,20 @@ const envSchema = z.object({
   S3_BUCKET: z.string().default('qaforge'),
   S3_ACCESS_KEY: z.string().optional(),
   S3_SECRET_KEY: z.string().optional(),
+  /** Seconds a signed file URL stays valid. */
+  FILE_URL_TTL_SECONDS: z.coerce.number().int().min(10).max(3600).default(300),
+  /** ClamAV (clamd) host; when set, uploads are scanned and unusable until clean. */
+  CLAMAV_HOST: z.string().optional(),
+  CLAMAV_PORT: z.coerce.number().default(3310),
+  /** Redis-backed rate limiting. Defaults to on, except under NODE_ENV=test. */
+  RATE_LIMIT_ENABLED: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
+  /** Requests per minute: general API per user (or IP), auth endpoints per IP, AI endpoints per user. */
+  RATE_LIMIT_API_PER_MIN: z.coerce.number().int().min(1).default(600),
+  RATE_LIMIT_AUTH_PER_MIN: z.coerce.number().int().min(1).default(10),
+  RATE_LIMIT_AI_PER_MIN: z.coerce.number().int().min(1).default(20),
 });
 
 export type Env = z.infer<typeof envSchema>;

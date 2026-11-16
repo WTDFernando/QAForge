@@ -290,6 +290,8 @@ enum ScanStatus {
   CLEAN
   INFECTED
   FAILED
+  /// Scanning is not configured (no CLAMAV_HOST): usable, shown as "not scanned"
+  SKIPPED
 }
 
 model Attachment {

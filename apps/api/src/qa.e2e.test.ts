@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
+import request from 'supertest';
 import { addMember, bootTestApp, createOrg, signUp, type TestUser } from './test/helpers';
 
 let app: INestApplication;
@@ -213,9 +214,12 @@ describe('requirements', () => {
       .expect(201);
     expect(up.body).toMatchObject({ kind: 'FILE', status: 'UPLOADED', name: 'spec.md' });
     expect(up.body.attachment.contentType).toBe('text/markdown');
-    const dl = await client
+    // The stable link checks access, then redirects to a short-lived signed URL (no cookie needed).
+    const redirect = await client
       .agent('get', `${base()}/attachments/${up.body.attachment.id}/download`)
-      .expect(200);
+      .expect(302);
+    expect(redirect.headers.location).toMatch(/^\/v1\/files\/.+&sig=/);
+    const dl = await request(app.getHttpServer()).get(redirect.headers.location!).expect(200);
     expect(dl.headers['content-disposition']).toMatch(/^attachment/);
     expect(dl.headers['x-content-type-options']).toBe('nosniff');
     expect(dl.text ?? dl.body.toString()).toContain('Users can pay by card');

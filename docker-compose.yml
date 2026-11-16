@@ -10,18 +10,18 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: qaforge
-    ports: ["5432:5432"]
+    ports: ['5432:5432']
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 5s
       retries: 10
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ['6379:6379']
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       retries: 10
 
@@ -32,10 +32,10 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
-    ports: ["9000:9000", "9001:9001"]
+    ports: ['9000:9000', '9001:9001']
     volumes: [miniodata:/data]
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ['CMD', 'mc', 'ready', 'local']
       interval: 5s
       retries: 10
 
@@ -56,7 +56,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/qaforge
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
-    ports: ["4000:4000"]
+    ports: ['4000:4000']
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -77,9 +77,42 @@ services:
     build: { context: ., dockerfile: infra/docker/web.Dockerfile }
     environment:
       API_URL: http://api:4000
-    ports: ["3000:3000"]
+    ports: ['3000:3000']
     depends_on: [api]
+
+  # Malware scanning of uploads: `docker compose --profile scan up -d`, then set CLAMAV_HOST=localhost
+  # (or clamav inside compose) for the API and worker. Signature download takes a minute on first start.
+  clamav:
+    profiles: [scan]
+    image: clamav/clamav:1.4
+    ports: ['3310:3310']
+    volumes: [clamdb:/var/lib/clamav]
+    healthcheck:
+      test: ['CMD', 'clamdcheck.sh']
+      interval: 30s
+      start_period: 120s
+      retries: 5
+
+  # Nightly pg_dump with retention: `docker compose --profile backup up -d`. See infra/backup/README.md.
+  backup:
+    profiles: [backup]
+    image: pgvector/pgvector:pg16
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: qaforge
+      BACKUP_DIR: /backups
+      BACKUP_RETENTION_DAYS: '14'
+      BACKUP_AT: '02:30'
+    volumes:
+      - ./infra/backup:/scripts:ro
+      - ./.data/backups:/backups
+    entrypoint: ['/bin/sh', '/scripts/scheduler.sh']
+    depends_on:
+      postgres: { condition: service_healthy }
 
 volumes:
   pgdata:
   miniodata:
+  clamdb:

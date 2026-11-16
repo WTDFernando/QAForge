@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -14,6 +15,16 @@ export interface StorageDriver {
   get(key: string): Promise<Readable>;
   read(key: string): Promise<Buffer>;
   delete(key: string): Promise<void>;
+  /** Direct, time-limited download URL (S3). Drivers without it are served through signed API URLs. */
+  presign?(
+    key: string,
+    opts: {
+      fileName: string;
+      contentType: string;
+      disposition: 'inline' | 'attachment';
+      ttlSeconds: number;
+    },
+  ): Promise<string>;
 }
 
 /** Development: files on local disk. Keys are generated server-side, never user input. */
@@ -75,6 +86,26 @@ export class S3Driver implements StorageDriver {
   }
   async delete(key: string) {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+  presign(
+    key: string,
+    o: {
+      fileName: string;
+      contentType: string;
+      disposition: 'inline' | 'attachment';
+      ttlSeconds: number;
+    },
+  ) {
+    return getSignedUrl(
+      this.client,
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ResponseContentType: o.contentType,
+        ResponseContentDisposition: `${o.disposition}; filename*=UTF-8''${encodeURIComponent(o.fileName)}`,
+      }),
+      { expiresIn: o.ttlSeconds },
+    );
   }
 }
 
