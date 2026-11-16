@@ -12,6 +12,10 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ProjectsModule } from './projects/projects.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { AiModule } from './ai/ai.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { TestRunsModule } from './test-runs/test-runs.module';
+import { BugsModule } from './bugs/bugs.module';
+import { CommentsModule } from './comments/comments.module';
 import { EnvironmentsModule } from './environments/environments.controller';
 import { RequirementsModule } from './requirements/requirements.controller';
 import { StorageModule } from './storage/storage.module';
@@ -47,6 +51,10 @@ import { ViewsModule } from './views/views.module';
     ViewsModule,
     DashboardModule,
     AiModule,
+    NotificationsModule,
+    TestRunsModule,
+    BugsModule,
+    CommentsModule,
   ],
   providers: [{ provide: APP_PIPE, useClass: ZodValidationPipe }],
 })

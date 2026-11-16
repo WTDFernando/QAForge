@@ -26,6 +26,12 @@ describe('RBAC', () => {
   it('viewer cannot write', () => {
     for (const p of ROLE_PERMISSIONS.VIEWER) expect(p.endsWith(':read')).toBe(true);
   });
+  it('developers execute runs and comment but do not create runs', () => {
+    expect(hasPermission('DEVELOPER', 'run:execute')).toBe(true);
+    expect(hasPermission('DEVELOPER', 'comment:write')).toBe(true);
+    expect(hasPermission('DEVELOPER', 'run:create')).toBe(false);
+    expect(hasPermission('QA_ENGINEER', 'run:create')).toBe(true);
+  });
   it('developer can log bugs but not approve test cases', () => {
     expect(hasPermission('DEVELOPER', 'bug:write')).toBe(true);
     expect(hasPermission('DEVELOPER', 'testcase:approve')).toBe(false);

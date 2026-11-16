@@ -40,9 +40,11 @@ export const PERMISSIONS = [
   'testcase:write',
   'testcase:approve',
   'run:read',
+  'run:create',
   'run:execute',
   'bug:read',
   'bug:write',
+  'comment:write',
   'release:read',
   'release:write',
   'release:approve',
@@ -70,7 +72,9 @@ const QA_ENGINEER: Permission[] = [
   ...READ_ALL,
   'requirement:write',
   'testcase:write',
+  'run:create',
   'run:execute',
+  'comment:write',
   'bug:write',
   'release:write',
   'ai:use',
@@ -101,10 +105,15 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   ADMIN: new Set(ADMIN),
   QA_LEAD: new Set(QA_LEAD),
   QA_ENGINEER: new Set(QA_ENGINEER),
-  DEVELOPER: new Set<Permission>([...READ_ALL, 'bug:write', 'run:execute']),
+  DEVELOPER: new Set<Permission>([...READ_ALL, 'bug:write', 'run:execute', 'comment:write']),
   VIEWER: new Set(READ_ALL),
   // Client: read-only plus approval of test cases and releases.
-  CLIENT: new Set<Permission>([...READ_ALL, 'testcase:approve', 'release:approve']),
+  CLIENT: new Set<Permission>([
+    ...READ_ALL,
+    'testcase:approve',
+    'release:approve',
+    'comment:write',
+  ]),
 };
 
 export function hasPermission(role: Role, permission: Permission): boolean {

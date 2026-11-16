@@ -58,10 +58,19 @@ export class PermissionGuard implements CanActivate {
     if (!membership) {
       throw new NotFoundException(projectId ? 'Project not found' : 'Organization not found');
     }
-    if (!hasPermission(membership.role, permission)) {
-      throw new ForbiddenException(`Your role (${membership.role}) lacks "${permission}"`);
+    // A project-level override replaces the org role inside that project (Owners are never overridden).
+    let role = membership.role;
+    if (projectId && role !== 'OWNER') {
+      const override = await this.prisma.client.projectMember.findUnique({
+        where: { projectId_userId: { projectId, userId: req.principal.userId } },
+        select: { role: true },
+      });
+      if (override) role = override.role;
     }
-    req.membership = { organizationId, role: membership.role, projectId };
+    if (!hasPermission(role, permission)) {
+      throw new ForbiddenException(`Your role (${role}) lacks "${permission}"`);
+    }
+    req.membership = { organizationId, role, projectId };
     return true;
   }
 }

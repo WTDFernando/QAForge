@@ -566,6 +566,13 @@ describe('saved views & dashboard', () => {
     expect(res.body.testCases.total).toBe(4);
     expect(res.body.testCases.byStatus.APPROVED).toBe(1);
     expect(res.body.lastRun).toBeNull();
+    expect(res.body.openBugsBySeverity).toEqual({
+      BLOCKER: 0,
+      CRITICAL: 0,
+      MAJOR: 0,
+      MINOR: 0,
+      TRIVIAL: 0,
+    });
     expect(res.body.attention.toReview).toEqual([]);
   });
 });
