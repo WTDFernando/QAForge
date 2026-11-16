@@ -1,0 +1,1565 @@
+// QAForge data model — PROPOSED FINAL SCHEMA (for review, not yet applied).
+// Sections marked [EXISTS] are live today; [NEW] and [CHANGED] are proposed.
+// QAForge data model.
+// Tenancy: Organization -> Project -> (requirements, test cases, runs, bugs, releases...)
+// Conventions: uuid ids, createdAt/updatedAt everywhere, every mutation recorded in AuditLog.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector, pgcrypto, pg_trgm]
+}
+
+// ---------------------------------------------------------------------------
+// Identity (tables used by Better Auth; field names follow its core schema)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions        Session[]
+  accounts        Account[]
+  memberships     Membership[]
+  invitationsSent Invitation[] @relation("InvitedBy")
+  projectsCreated Project[]    @relation("ProjectCreatedBy")
+
+  @@map("user")
+}
+
+model Session {
+  id                   String   @id @default(uuid()) @db.Uuid
+  token                String   @unique
+  expiresAt            DateTime
+  ipAddress            String?
+  userAgent            String?
+  userId               String   @db.Uuid
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Organization the user is currently working in (UI context).
+  activeOrganizationId String?  @db.Uuid
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(uuid()) @db.Uuid
+  accountId             String
+  providerId            String
+  userId                String    @db.Uuid
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(uuid()) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+enum Role {
+  OWNER
+  ADMIN
+  QA_LEAD
+  QA_ENGINEER
+  DEVELOPER
+  VIEWER
+  CLIENT
+}
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  /// Org-level settings (AI provider/model/limits, defaults). Secrets are stored encrypted, never returned by the API.
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships   Membership[]
+  invitations   Invitation[]
+  projects      Project[]
+  auditLogs     AuditLog[]
+  agentJobs     AgentJob[]
+  aiUsage       AiUsage[]
+  // [NEW]
+  apiTokens     ApiToken[]
+  webhooks      Webhook[]
+  integrations  Integration[]
+  notifications Notification[]
+
+  @@map("organization")
+}
+
+model Membership {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String       @db.Uuid
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           Role
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("membership")
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+model Invitation {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @db.Uuid
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           Role
+  status         InvitationStatus @default(PENDING)
+  invitedById    String           @db.Uuid
+  invitedBy      User             @relation("InvitedBy", fields: [invitedById], references: [id])
+  expiresAt      DateTime
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([organizationId, status])
+  @@index([email])
+  @@map("invitation")
+}
+
+model Project {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  /// Short uppercase key, unique per org (e.g. PAY). Item refs inside a project are TC-0142, REQ-0007...
+  key            String
+  description    String?
+  /// Project settings, incl. module feature flags ({ modules: { performance: false, ... } }).
+  settings       Json         @default("{}")
+  archivedAt     DateTime?
+  createdById    String       @db.Uuid
+  createdBy      User         @relation("ProjectCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  counters            ProjectCounter[]
+  auditLogs           AuditLog[]
+  environments        Environment[]
+  requirements        Requirement[]
+  sources             RequirementSource[]
+  suites              TestSuite[]
+  testCases           TestCase[]
+  sharedSteps         SharedStep[]
+  attachments         Attachment[]
+  savedViews          SavedView[]
+  agentJobs           AgentJob[]
+  // [NEW] Core QA
+  members             ProjectMember[]
+  testRuns            TestRun[]
+  bugs                Bug[]
+  comments            Comment[]
+  customFields        CustomField[]
+  templates           Template[]
+  // [NEW] Releases & reports
+  releases            Release[]
+  reports             Report[]
+  reportSchedules     ReportSchedule[]
+  // [NEW] Automation
+  apiCollections      ApiCollection[]
+  automationTests     AutomationTest[]
+  automationRuns      AutomationRun[]
+  automationSchedules AutomationSchedule[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId, archivedAt])
+  @@map("project")
+}
+
+/// Monotonic per-project sequence for human refs (REQ-1, TC-1, BUG-1...).
+model ProjectCounter {
+  projectId String  @db.Uuid
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind      String
+  value     Int     @default(0)
+
+  @@id([projectId, kind])
+  @@map("project_counter")
+}
+
+// ---------------------------------------------------------------------------
+// Audit history (append-only)
+// ---------------------------------------------------------------------------
+
+enum ActorType {
+  USER
+  API_TOKEN
+  AI_AGENT
+  SYSTEM
+}
+
+model AuditLog {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String?      @db.Uuid
+  project        Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actorType      ActorType
+  actorId        String?      @db.Uuid
+  entityType     String
+  entityId       String       @db.Uuid
+  action         String
+  /// Only changed fields: { field: { from, to } }
+  changes        Json?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([projectId, createdAt])
+  @@map("audit_log")
+}
+
+// ---------------------------------------------------------------------------
+// Shared enums
+// ---------------------------------------------------------------------------
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// Conventions for domain entities: projectId scope, createdById/updatedById are user ids
+// (plain uuids; who-did-what is also in AuditLog), deletedAt = soft delete (supports undo).
+
+// ---------------------------------------------------------------------------
+// Environments (Dev, Staging, Prod...)
+// ---------------------------------------------------------------------------
+
+model Environment {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @db.Uuid
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  baseUrl     String?
+  /// Non-secret variables: { KEY: "value" }
+  variables   Json     @default("{}")
+  /// AES-256-GCM encrypted JSON object of secrets. Never returned by the API (only key names).
+  secrets     String?
+  position    Int      @default(0)
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // [NEW]
+  testRuns            TestRun[]
+  bugs                Bug[]
+  automationRuns      AutomationRun[]
+  automationSchedules AutomationSchedule[]
+
+  @@unique([projectId, name])
+  @@map("environment")
+}
+
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
+
+enum ScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  FAILED
+}
+
+model Attachment {
+  id          String     @id @default(uuid()) @db.Uuid
+  projectId   String     @db.Uuid
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Key in the storage backend (local disk in dev, S3 in prod).
+  storageKey  String     @unique
+  fileName    String
+  contentType String
+  size        Int
+  /// Owning item, e.g. ("test_case", id). Null while not yet attached.
+  entityType  String?
+  entityId    String?    @db.Uuid
+  // [CHANGED] security: SHA-256 for integrity/dedupe, malware scan state (ClamAV); downloads blocked until CLEAN
+  sha256      String?
+  scanStatus  ScanStatus @default(PENDING)
+  scannedAt   DateTime?
+  /// [CHANGED] Bug screenshots: highlight boxes, normalized 0-1: [{ x, y, w, h, label, source: "ai"|"user" }]
+  annotations Json?
+  createdById String     @db.Uuid
+  createdAt   DateTime   @default(now())
+
+  sources RequirementSource[]
+
+  @@index([entityType, entityId])
+  @@map("attachment")
+}
+
+// ---------------------------------------------------------------------------
+// Requirements
+// ---------------------------------------------------------------------------
+
+enum RequirementType {
+  EPIC
+  FEATURE
+  STORY
+}
+
+enum RequirementStatus {
+  DRAFT
+  APPROVED
+  OBSOLETE
+}
+
+enum SourceKind {
+  FILE
+  LINK
+  JIRA
+  GITLAB
+}
+
+enum SourceStatus {
+  UPLOADED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+/// Where requirements came from: an uploaded document, a Figma/URL link, or an issue import.
+model RequirementSource {
+  id           String       @id @default(uuid()) @db.Uuid
+  projectId    String       @db.Uuid
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind         SourceKind
+  name         String
+  attachmentId String?      @db.Uuid
+  attachment   Attachment?  @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+  url          String?
+  status       SourceStatus @default(UPLOADED)
+  /// Agent output summary (clarity, ambiguities...) filled in Phase 3.
+  analysis     Json?
+  createdById  String       @db.Uuid
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  requirements Requirement[]
+
+  @@index([projectId, createdAt])
+  @@map("requirement_source")
+}
+
+model Requirement {
+  id                 String             @id @default(uuid()) @db.Uuid
+  projectId          String             @db.Uuid
+  project            Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Per-project sequence -> REQ-0007
+  seq                Int
+  type               RequirementType    @default(STORY)
+  title              String
+  /// Tiptap JSON document
+  description        Json?
+  /// Plain text derived from description (search, AI context)
+  descriptionText    String             @default("")
+  acceptanceCriteria String[]           @default([])
+  priority           Priority           @default(MEDIUM)
+  status             RequirementStatus  @default(DRAFT)
+  parentId           String?            @db.Uuid
+  parent             Requirement?       @relation("RequirementTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children           Requirement[]      @relation("RequirementTree")
+  position           Int                @default(0)
+  sourceId           String?            @db.Uuid
+  source             RequirementSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  /// 0-100, set by the Requirement Agent (Phase 3)
+  clarityScore       Int?
+  /// Requirement Agent findings: { ambiguities, missingCriteria, questions, sourceQuote, quoteVerified }
+  aiAnalysis         Json?
+  /// Agent job that produced or last analyzed this item (source + model live on the job).
+  aiJobId            String?            @db.Uuid
+  aiGenerated        Boolean            @default(false)
+  version            Int                @default(1)
+  createdById        String             @db.Uuid
+  updatedById        String             @db.Uuid
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+
+  versions     RequirementVersion[]
+  testCases    RequirementTestCase[]
+  // [NEW]
+  /// Values for project custom fields: { <fieldKey>: value }
+  customFields Json                  @default("{}")
+  releaseItems ReleaseItem[]
+  // embedding Unsupported("vector(1024)")?   // [PENDING] semantic duplicates, depends on embeddings provider decision
+
+  @@unique([projectId, seq])
+  @@index([projectId, parentId, position])
+  @@index([title(ops: raw("gin_trgm_ops"))], map: "requirement_title_trgm_idx", type: Gin)
+  @@map("requirement")
+}
+
+model RequirementVersion {
+  id            String      @id @default(uuid()) @db.Uuid
+  requirementId String      @db.Uuid
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  version       Int
+  snapshot      Json
+  createdById   String      @db.Uuid
+  createdAt     DateTime    @default(now())
+
+  @@unique([requirementId, version])
+  @@map("requirement_version")
+}
+
+// ---------------------------------------------------------------------------
+// Test cases
+// ---------------------------------------------------------------------------
+
+model TestSuite {
+  id          String      @id @default(uuid()) @db.Uuid
+  projectId   String      @db.Uuid
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  parentId    String?     @db.Uuid
+  parent      TestSuite?  @relation("SuiteTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children    TestSuite[] @relation("SuiteTree")
+  position    Int         @default(0)
+  createdById String      @db.Uuid
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  testCases TestCase[]
+
+  @@index([projectId, parentId, position])
+  @@map("test_suite")
+}
+
+enum TestCaseStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  DEPRECATED
+}
+
+enum TestCaseType {
+  FUNCTIONAL
+  UI
+  API
+  REGRESSION
+  SMOKE
+  SECURITY
+  PERFORMANCE
+  ACCESSIBILITY
+}
+
+enum TestTechnique {
+  POSITIVE
+  NEGATIVE
+  BOUNDARY
+  EQUIVALENCE
+  DECISION_TABLE
+  STATE_TRANSITION
+  EDGE_CASE
+  EXPLORATORY
+}
+
+enum AutomationStatus {
+  NOT_AUTOMATED
+  CANDIDATE
+  AUTOMATED
+  NOT_APPLICABLE
+}
+
+model TestCase {
+  id               String           @id @default(uuid()) @db.Uuid
+  projectId        String           @db.Uuid
+  project          Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Per-project sequence -> TC-0142
+  seq              Int
+  suiteId          String?          @db.Uuid
+  suite            TestSuite?       @relation(fields: [suiteId], references: [id], onDelete: SetNull)
+  title            String
+  preconditions    String           @default("")
+  /// Parameterised data: { columns: string[], rows: string[][] }
+  testData         Json?
+  priority         Priority         @default(MEDIUM)
+  type             TestCaseType     @default(FUNCTIONAL)
+  technique        TestTechnique?
+  status           TestCaseStatus   @default(DRAFT)
+  automationStatus AutomationStatus @default(NOT_AUTOMATED)
+  tags             String[]         @default([])
+  estimateMinutes  Int?
+  aiGenerated      Boolean          @default(false)
+  /// 0-1, set by the Test Case Writer Agent
+  aiConfidence     Float?
+  /// Writer rationale, possible duplicates, reviewer findings: { rationale, duplicates[], review }
+  aiNotes          Json?
+  aiJobId          String?          @db.Uuid
+  version          Int              @default(1)
+  createdById      String           @db.Uuid
+  updatedById      String           @db.Uuid
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+
+  steps           TestStep[]
+  versions        TestCaseVersion[]
+  requirements    RequirementTestCase[]
+  // [NEW]
+  customFields    Json                  @default("{}")
+  runResults      TestRunResult[]
+  bugs            TestCaseBug[]
+  automationTests AutomationTest[]
+  apiRequests     ApiRequest[]
+  // embedding Unsupported("vector(1024)")?   // [PENDING] see Requirement.embedding
+
+  @@unique([projectId, seq])
+  @@index([projectId, suiteId])
+  @@index([projectId, status])
+  @@index([title(ops: raw("gin_trgm_ops"))], map: "test_case_title_trgm_idx", type: Gin)
+  @@map("test_case")
+}
+
+model TestStep {
+  id           String      @id @default(uuid()) @db.Uuid
+  testCaseId   String      @db.Uuid
+  testCase     TestCase    @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  position     Int
+  action       String      @default("")
+  expected     String      @default("")
+  /// When set, this step expands to the shared step's steps.
+  sharedStepId String?     @db.Uuid
+  sharedStep   SharedStep? @relation(fields: [sharedStepId], references: [id], onDelete: Restrict)
+
+  @@index([testCaseId, position])
+  @@map("test_step")
+}
+
+/// Reusable sequence of steps (e.g. "Log in as admin").
+model SharedStep {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @db.Uuid
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  /// [{ action, expected }]
+  steps       Json     @default("[]")
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  usages TestStep[]
+
+  @@unique([projectId, name])
+  @@map("shared_step")
+}
+
+model TestCaseVersion {
+  id          String   @id @default(uuid()) @db.Uuid
+  testCaseId  String   @db.Uuid
+  testCase    TestCase @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  version     Int
+  snapshot    Json
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+
+  @@unique([testCaseId, version])
+  @@map("test_case_version")
+}
+
+/// Traceability: requirement <-> test case (many-to-many).
+model RequirementTestCase {
+  requirementId String      @db.Uuid
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  testCaseId    String      @db.Uuid
+  testCase      TestCase    @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  createdById   String      @db.Uuid
+  createdAt     DateTime    @default(now())
+
+  @@id([requirementId, testCaseId])
+  @@index([testCaseId])
+  @@map("requirement_test_case")
+}
+
+// ---------------------------------------------------------------------------
+// Saved list views (filters, columns, grouping) per user or shared with the project
+// ---------------------------------------------------------------------------
+
+model SavedView {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @db.Uuid
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// "test_case" | "requirement" | ...
+  entity    String
+  name      String
+  config    Json
+  ownerId   String   @db.Uuid
+  shared    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, entity])
+  @@map("saved_view")
+}
+
+// ---------------------------------------------------------------------------
+// AI agents
+// ---------------------------------------------------------------------------
+
+enum AgentJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+/// One agent run. Every AI output links back here (source item, model, prompt version).
+model AgentJob {
+  id              String         @id @default(uuid()) @db.Uuid
+  organizationId  String         @db.Uuid
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId       String?        @db.Uuid
+  project         Project?       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// "requirement" | "test-case-writer" | "test-case-reviewer"
+  agent           String
+  status          AgentJobStatus @default(QUEUED)
+  /// What the job is about, e.g. ("requirement_source", id) or ("requirement", id)
+  sourceType      String?
+  sourceIds       String[]       @default([]) @db.Uuid
+  input           Json
+  output          Json?
+  /// Short human summary, e.g. "Drafted 7 test cases for REQ-0003"
+  summary         String?
+  error           String?
+  progress        Int            @default(0)
+  progressMessage String?
+  model           String?
+  promptVersion   String?
+  createdById     String         @db.Uuid
+  createdAt       DateTime       @default(now())
+  startedAt       DateTime?
+  finishedAt      DateTime?
+
+  usage AiUsage[]
+
+  @@index([organizationId, createdAt])
+  @@index([projectId, createdAt])
+  @@map("agent_job")
+}
+
+/// Token and cost log, one row per model call.
+model AiUsage {
+  id               String       @id @default(uuid()) @db.Uuid
+  organizationId   String       @db.Uuid
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId        String?      @db.Uuid
+  agentJobId       String?      @db.Uuid
+  agentJob         AgentJob?    @relation(fields: [agentJobId], references: [id], onDelete: SetNull)
+  agent            String
+  provider         String
+  model            String
+  inputTokens      Int
+  outputTokens     Int
+  cacheReadTokens  Int          @default(0)
+  cacheWriteTokens Int          @default(0)
+  costUsd          Decimal      @db.Decimal(12, 6)
+  createdById      String?      @db.Uuid
+  createdAt        DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("ai_usage")
+}
+
+// ===========================================================================
+// [NEW] Project-level roles (optional override of the organization role)
+// ===========================================================================
+
+/// When present, this role applies in the project instead of the org role (e.g. a Client on one project only).
+model ProjectMember {
+  projectId String   @db.Uuid
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String   @db.Uuid
+  role      Role
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_member")
+}
+
+// ===========================================================================
+// [NEW] Test runs (manual execution)
+// ===========================================================================
+
+enum TestRunStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  ABORTED
+}
+
+enum TestRunSource {
+  SUITE
+  FILTER
+  RELEASE
+  MANUAL
+  AUTOMATION
+}
+
+enum ResultStatus {
+  UNTESTED
+  PASSED
+  FAILED
+  BLOCKED
+  SKIPPED
+  RETEST
+}
+
+model TestRun {
+  id            String        @id @default(uuid()) @db.Uuid
+  projectId     String        @db.Uuid
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Per-project sequence -> RUN-0001
+  seq           Int
+  name          String
+  description   String        @default("")
+  status        TestRunStatus @default(PLANNED)
+  source        TestRunSource @default(MANUAL)
+  /// How cases were selected (suite id, saved filter, release id) so the run can be re-created
+  sourceConfig  Json          @default("{}")
+  environmentId String?       @db.Uuid
+  environment   Environment?  @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  build         String?
+  releaseId     String?       @db.Uuid
+  release       Release?      @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  dueAt         DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  customFields  Json          @default("{}")
+  createdById   String        @db.Uuid
+  updatedById   String        @db.Uuid
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+
+  results        TestRunResult[]
+  automationRuns AutomationRun[]
+  releaseItems   ReleaseItem[]
+
+  @@unique([projectId, seq])
+  @@index([projectId, status])
+  @@index([releaseId])
+  @@map("test_run")
+}
+
+/// One test case inside a run. The case is snapshotted so later edits don't rewrite history.
+model TestRunResult {
+  id                 String       @id @default(uuid()) @db.Uuid
+  testRunId          String       @db.Uuid
+  testRun            TestRun      @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+  testCaseId         String?      @db.Uuid
+  testCase           TestCase?    @relation(fields: [testCaseId], references: [id], onDelete: SetNull)
+  testCaseVersion    Int
+  /// { ref, title, preconditions, steps[{action,expected}], testData }
+  snapshot           Json
+  /// Parameterised data row this result covers (null = whole case)
+  dataRowIndex       Int?
+  position           Int
+  status             ResultStatus @default(UNTESTED)
+  /// Per step: [{ index, status, actual, note }]
+  stepResults        Json         @default("[]")
+  notes              String       @default("")
+  assigneeId         String?      @db.Uuid
+  executedById       String?      @db.Uuid
+  executedAt         DateTime?
+  durationSec        Int?
+  /// Set when the result came from automation
+  automationResultId String?      @unique @db.Uuid
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  bugs             Bug[]
+  automationResult AutomationResult? @relation(fields: [automationResultId], references: [id], onDelete: SetNull)
+
+  @@index([testRunId, position])
+  @@index([testRunId, status])
+  @@index([assigneeId, status])
+  @@index([testCaseId])
+  @@map("test_run_result")
+}
+
+// ===========================================================================
+// [NEW] Bugs
+// ===========================================================================
+
+enum BugSeverity {
+  BLOCKER
+  CRITICAL
+  MAJOR
+  MINOR
+  TRIVIAL
+}
+
+enum BugStatus {
+  NEW
+  TRIAGED
+  IN_PROGRESS
+  FIXED
+  READY_FOR_RETEST
+  CLOSED
+  REOPENED
+}
+
+enum BugResolution {
+  FIXED
+  DUPLICATE
+  WONT_FIX
+  CANNOT_REPRODUCE
+  BY_DESIGN
+}
+
+model Bug {
+  id               String         @id @default(uuid()) @db.Uuid
+  projectId        String         @db.Uuid
+  project          Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Per-project sequence -> BUG-0001
+  seq              Int
+  title            String
+  /// Tiptap document
+  description      Json?
+  descriptionText  String         @default("")
+  stepsToReproduce String[]       @default([])
+  expectedResult   String         @default("")
+  actualResult     String         @default("")
+  /// { browser, os, device, build, url, viewport }
+  envDetails       Json           @default("{}")
+  environmentId    String?        @db.Uuid
+  environment      Environment?   @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  severity         BugSeverity    @default(MAJOR)
+  priority         Priority       @default(MEDIUM)
+  component        String?
+  status           BugStatus      @default(NEW)
+  resolution       BugResolution?
+  duplicateOfId    String?        @db.Uuid
+  duplicateOf      Bug?           @relation("BugDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates       Bug[]          @relation("BugDuplicates")
+  assigneeId       String?        @db.Uuid
+  /// Where it was found (failed step in a run)
+  testRunResultId  String?        @db.Uuid
+  testRunResult    TestRunResult? @relation(fields: [testRunResultId], references: [id], onDelete: SetNull)
+  failedStepIndex  Int?
+  /// Kanban order within a status column
+  rank             Float          @default(0)
+  customFields     Json           @default("{}")
+  aiGenerated      Boolean        @default(false)
+  /// Bug Agent output: { confidence, duplicates[{ref,similarity}], rationale }
+  aiNotes          Json?
+  aiJobId          String?        @db.Uuid
+  version          Int            @default(1)
+  createdById      String         @db.Uuid
+  updatedById      String         @db.Uuid
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  closedAt         DateTime?
+  deletedAt        DateTime?
+  // embedding Unsupported("vector(1024)")?   // [PENDING] duplicate detection on meaning
+
+  testCases    TestCaseBug[]
+  releaseItems ReleaseItem[]
+
+  @@unique([projectId, seq])
+  @@index([projectId, status, rank])
+  @@index([projectId, severity])
+  @@index([assigneeId, status])
+  @@index([title(ops: raw("gin_trgm_ops"))], map: "bug_title_trgm_idx", type: Gin)
+  @@map("bug")
+}
+
+/// Traceability: test case <-> bug (many-to-many; a run result also links them implicitly).
+model TestCaseBug {
+  testCaseId  String   @db.Uuid
+  testCase    TestCase @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  bugId       String   @db.Uuid
+  bug         Bug      @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+
+  @@id([testCaseId, bugId])
+  @@index([bugId])
+  @@map("test_case_bug")
+}
+
+/// Comments on bugs (and, later, requirements and test cases). Tiptap body; @mentions feed notifications.
+model Comment {
+  id         String    @id @default(uuid()) @db.Uuid
+  projectId  String    @db.Uuid
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// "bug" | "test_case" | "requirement"
+  entityType String
+  entityId   String    @db.Uuid
+  body       Json
+  bodyText   String
+  mentions   String[]  @default([]) @db.Uuid
+  authorId   String    @db.Uuid
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  editedAt   DateTime?
+  deletedAt  DateTime?
+
+  @@index([entityType, entityId, createdAt])
+  @@map("comment")
+}
+
+// ===========================================================================
+// [NEW] Custom fields & templates
+// ===========================================================================
+
+enum CustomFieldEntity {
+  REQUIREMENT
+  TEST_CASE
+  TEST_RUN
+  BUG
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  CHECKBOX
+  SELECT
+  MULTI_SELECT
+  USER
+  URL
+}
+
+/// Definition only; values live in each entity's `customFields` JSON (GIN-indexable).
+model CustomField {
+  id         String            @id @default(uuid()) @db.Uuid
+  projectId  String            @db.Uuid
+  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  entity     CustomFieldEntity
+  key        String
+  label      String
+  type       CustomFieldType
+  /// SELECT options: [{ value, label, color }]
+  options    Json              @default("[]")
+  required   Boolean           @default(false)
+  position   Int               @default(0)
+  archivedAt DateTime?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@unique([projectId, entity, key])
+  @@map("custom_field")
+}
+
+/// Reusable starting points (e.g. bug report template, test case template).
+model Template {
+  id          String            @id @default(uuid()) @db.Uuid
+  projectId   String            @db.Uuid
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  entity      CustomFieldEntity
+  name        String
+  content     Json
+  isDefault   Boolean           @default(false)
+  createdById String            @db.Uuid
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([projectId, entity, name])
+  @@map("template")
+}
+
+// ===========================================================================
+// [NEW] Releases, quality gates, approvals
+// ===========================================================================
+
+enum ReleaseStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  RELEASED
+}
+
+model Release {
+  id          String        @id @default(uuid()) @db.Uuid
+  projectId   String        @db.Uuid
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Per-project sequence -> REL-0001
+  seq         Int
+  name        String
+  /// e.g. v2.4.0
+  version     String
+  description String        @default("")
+  targetDate  DateTime?
+  status      ReleaseStatus @default(DRAFT)
+  releasedAt  DateTime?
+  createdById String        @db.Uuid
+  updatedById String        @db.Uuid
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  items     ReleaseItem[]
+  testRuns  TestRun[]
+  gates     QualityGate[]
+  approvals Approval[]
+  reports   Report[]
+
+  @@unique([projectId, seq])
+  @@unique([projectId, version])
+  @@map("release")
+}
+
+/// What a release contains. Exactly one of the three item columns is set (CHECK constraint in the migration).
+model ReleaseItem {
+  id            String       @id @default(uuid()) @db.Uuid
+  releaseId     String       @db.Uuid
+  release       Release      @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  requirementId String?      @db.Uuid
+  requirement   Requirement? @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  testRunId     String?      @db.Uuid
+  testRun       TestRun?     @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+  bugId         String?      @db.Uuid
+  bug           Bug?         @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  createdById   String       @db.Uuid
+  createdAt     DateTime     @default(now())
+
+  @@unique([releaseId, requirementId])
+  @@unique([releaseId, testRunId])
+  @@unique([releaseId, bugId])
+  @@map("release_item")
+}
+
+enum GateMetric {
+  PASS_RATE
+  EXECUTION_COMPLETE
+  OPEN_BUGS
+  REQUIREMENT_COVERAGE
+  HIGH_PRIORITY_COVERAGE
+  AUTOMATION_PASS_RATE
+}
+
+enum GateOperator {
+  GTE
+  LTE
+  EQ
+}
+
+/// Readiness rule, e.g. PASS_RATE >= 95, OPEN_BUGS (severity CRITICAL) <= 0. Evaluated from live data.
+model QualityGate {
+  id        String       @id @default(uuid()) @db.Uuid
+  releaseId String       @db.Uuid
+  release   Release      @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  metric    GateMetric
+  operator  GateOperator
+  threshold Float
+  /// Metric options, e.g. { severity: ["BLOCKER","CRITICAL"] } or { priority: ["HIGH","CRITICAL"] }
+  params    Json         @default("{}")
+  /// Blocking gates must pass before approval can be requested
+  blocking  Boolean      @default(true)
+  position  Int          @default(0)
+
+  @@index([releaseId])
+  @@map("quality_gate")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Named sign-off (QA Lead, PM, Client...). Gate results are frozen at decision time.
+model Approval {
+  id           String         @id @default(uuid()) @db.Uuid
+  releaseId    String         @db.Uuid
+  release      Release        @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  approverId   String         @db.Uuid
+  /// Display role, e.g. "QA Lead", "Product Manager", "Client"
+  roleLabel    String
+  status       ApprovalStatus @default(PENDING)
+  comment      String         @default("")
+  gateSnapshot Json?
+  decidedAt    DateTime?
+  createdAt    DateTime       @default(now())
+
+  @@unique([releaseId, approverId])
+  @@map("approval")
+}
+
+// ===========================================================================
+// [NEW] Reports
+// ===========================================================================
+
+enum ReportType {
+  TEST_EXECUTION
+  GO_NO_GO
+  TRACEABILITY_MATRIX
+  BUG_SUMMARY
+  SPRINT_SUMMARY
+  AUTOMATION_TREND
+}
+
+enum ReportStatus {
+  QUEUED
+  READY
+  FAILED
+}
+
+/// A generated report. Numbers are frozen in `data` (from the DB, never from the AI); the AI only writes `narrative`.
+model Report {
+  id             String       @id @default(uuid()) @db.Uuid
+  projectId      String       @db.Uuid
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  releaseId      String?      @db.Uuid
+  release        Release?     @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  type           ReportType
+  title          String
+  params         Json         @default("{}")
+  status         ReportStatus @default(QUEUED)
+  data           Json?
+  /// Report Agent text: { summary, risks[], recommendation }
+  narrative      Json?
+  aiJobId        String?      @db.Uuid
+  /// Exports are Attachments (entityType "report"): pdf, docx, xlsx
+  /// Read-only share link: only the SHA-256 of the token is stored
+  shareTokenHash String?      @unique
+  shareExpiresAt DateTime?
+  createdById    String       @db.Uuid
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([projectId, createdAt])
+  @@map("report")
+}
+
+model ReportSchedule {
+  id          String     @id @default(uuid()) @db.Uuid
+  projectId   String     @db.Uuid
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        ReportType
+  params      Json       @default("{}")
+  /// Cron in the org's time zone, e.g. "0 8 * * MON"
+  cron        String
+  timezone    String     @default("UTC")
+  recipients  String[]
+  enabled     Boolean    @default(true)
+  lastRunAt   DateTime?
+  createdById String     @db.Uuid
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("report_schedule")
+}
+
+// ===========================================================================
+// [NEW] Automation: API testing, Playwright tests, runs
+// ===========================================================================
+
+/// Folder tree of API requests. Variables are non-secret; secrets come from the run's Environment.
+model ApiCollection {
+  id           String          @id @default(uuid()) @db.Uuid
+  projectId    String          @db.Uuid
+  project      Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentId     String?         @db.Uuid
+  parent       ApiCollection?  @relation("ApiCollectionTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children     ApiCollection[] @relation("ApiCollectionTree")
+  name         String
+  description  String          @default("")
+  variables    Json            @default("{}")
+  /// Inherited by requests: { type: "bearer"|"apiKey"|"oauth2"|"basic"|"none", ...refs to env secrets }
+  auth         Json            @default("{\"type\":\"none\"}")
+  position     Int             @default(0)
+  /// Where it was imported from: { format: "postman"|"bruno"|"openapi"|"curl", fileName }
+  importedFrom Json?
+  createdById  String          @db.Uuid
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  requests ApiRequest[]
+
+  @@index([projectId, parentId, position])
+  @@map("api_collection")
+}
+
+enum HttpMethod {
+  GET
+  POST
+  PUT
+  PATCH
+  DELETE
+  HEAD
+  OPTIONS
+}
+
+model ApiRequest {
+  id           String        @id @default(uuid()) @db.Uuid
+  collectionId String        @db.Uuid
+  collection   ApiCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  name         String
+  kind         String        @default("rest") // "rest" | "graphql"
+  method       HttpMethod    @default(GET)
+  /// May contain {{variables}}
+  url          String
+  headers      Json          @default("[]")
+  query        Json          @default("[]")
+  /// { type: "none"|"json"|"form"|"text"|"graphql", content, variables }
+  body         Json          @default("{\"type\":\"none\"}")
+  auth         Json?
+  /// [{ type: "status"|"jsonSchema"|"jsonPath"|"header"|"responseTime", ... }]
+  assertions   Json          @default("[]")
+  /// Chaining: [{ variable, from: "jsonPath"|"header", path }]
+  extract      Json          @default("[]")
+  position     Int           @default(0)
+  testCaseId   String?       @db.Uuid
+  testCase     TestCase?     @relation(fields: [testCaseId], references: [id], onDelete: SetNull)
+  createdById  String        @db.Uuid
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  results AutomationResult[]
+
+  @@index([collectionId, position])
+  @@map("api_request")
+}
+
+enum AutomationTestStatus {
+  ACTIVE
+  QUARANTINED
+  DISABLED
+}
+
+/// A Playwright UI test file (TypeScript, page-object pattern), edited in the Monaco editor.
+model AutomationTest {
+  id          String               @id @default(uuid()) @db.Uuid
+  projectId   String               @db.Uuid
+  project     Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  /// Virtual file path inside the project's test workspace, e.g. "checkout/declined-card.spec.ts"
+  path        String
+  code        String
+  status      AutomationTestStatus @default(ACTIVE)
+  testCaseId  String?              @db.Uuid
+  testCase    TestCase?            @relation(fields: [testCaseId], references: [id], onDelete: SetNull)
+  tags        String[]             @default([])
+  /// Rolling flakiness 0-1 from recent results
+  flakyScore  Float                @default(0)
+  aiGenerated Boolean              @default(false)
+  aiJobId     String?              @db.Uuid
+  version     Int                  @default(1)
+  createdById String               @db.Uuid
+  updatedById String               @db.Uuid
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  deletedAt   DateTime?
+
+  results AutomationResult[]
+
+  @@unique([projectId, path])
+  @@map("automation_test")
+}
+
+enum AutomationTrigger {
+  MANUAL
+  SCHEDULE
+  CI_WEBHOOK
+  API
+}
+
+enum AutomationRunStatus {
+  QUEUED
+  RUNNING
+  PASSED
+  FAILED
+  ERROR
+  CANCELLED
+}
+
+model AutomationRun {
+  id             String              @id @default(uuid()) @db.Uuid
+  projectId      String              @db.Uuid
+  project        Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  trigger        AutomationTrigger
+  /// Who/what started it: user id, schedule id, CI pipeline URL
+  triggerRef     String?
+  /// Webhook retries with the same key return the same run (idempotency)
+  idempotencyKey String?             @unique
+  /// { testIds[], collectionIds[], tags[] }
+  selection      Json
+  environmentId  String?             @db.Uuid
+  environment    Environment?        @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  build          String?
+  status         AutomationRunStatus @default(QUEUED)
+  workers        Int                 @default(1)
+  /// { total, passed, failed, flaky, skipped, durationMs }
+  totals         Json                @default("{}")
+  /// Results are mirrored into a manual-style Test Run for one place to look
+  testRunId      String?             @db.Uuid
+  testRun        TestRun?            @relation(fields: [testRunId], references: [id], onDelete: SetNull)
+  scheduleId     String?             @db.Uuid
+  schedule       AutomationSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  createdById    String?             @db.Uuid
+  createdAt      DateTime            @default(now())
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  results AutomationResult[]
+
+  @@index([projectId, createdAt])
+  @@map("automation_run")
+}
+
+enum FailureClass {
+  PRODUCT_BUG
+  TEST_BUG
+  FLAKY
+  ENVIRONMENT
+}
+
+/// One test or API request execution inside an automation run.
+model AutomationResult {
+  id               String          @id @default(uuid()) @db.Uuid
+  automationRunId  String          @db.Uuid
+  automationRun    AutomationRun   @relation(fields: [automationRunId], references: [id], onDelete: Cascade)
+  automationTestId String?         @db.Uuid
+  automationTest   AutomationTest? @relation(fields: [automationTestId], references: [id], onDelete: SetNull)
+  apiRequestId     String?         @db.Uuid
+  apiRequest       ApiRequest?     @relation(fields: [apiRequestId], references: [id], onDelete: SetNull)
+  status           ResultStatus
+  attempt          Int             @default(1)
+  durationMs       Int?
+  error            String?
+  /// Truncated log output; full logs, traces, videos and screenshots are Attachments
+  log              String?
+  /// API: request/response summary with secrets redacted
+  exchange         Json?
+  failureClass     FailureClass?
+  /// Failure Analysis Agent: { confidence, reasoning, suggestedFix }
+  analysis         Json?
+  aiJobId          String?         @db.Uuid
+  createdAt        DateTime        @default(now())
+
+  runResult TestRunResult?
+
+  @@index([automationRunId])
+  @@index([automationTestId, createdAt])
+  @@map("automation_result")
+}
+
+model AutomationSchedule {
+  id            String       @id @default(uuid()) @db.Uuid
+  projectId     String       @db.Uuid
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name          String
+  cron          String
+  timezone      String       @default("UTC")
+  selection     Json
+  environmentId String?      @db.Uuid
+  environment   Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  enabled       Boolean      @default(true)
+  lastRunAt     DateTime?
+  createdById   String       @db.Uuid
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  runs AutomationRun[]
+
+  @@map("automation_schedule")
+}
+
+// ===========================================================================
+// [NEW] Platform: API tokens, webhooks, integrations, notifications
+// ===========================================================================
+
+/// Personal/service tokens for the public REST API, CI webhooks and the MCP server.
+model ApiToken {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  /// SHA-256 of the token; the token is shown once at creation
+  tokenHash      String       @unique
+  /// First characters for recognition, e.g. "qaf_live_3kF9"
+  prefix         String
+  /// Acts with at most this role; optional project restriction
+  role           Role
+  projectIds     String[]     @default([]) @db.Uuid
+  scopes         String[]     @default([])
+  createdById    String       @db.Uuid
+  expiresAt      DateTime?
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+  @@map("api_token")
+}
+
+/// Outgoing webhooks, signed with HMAC-SHA256.
+model Webhook {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String?      @db.Uuid
+  url            String
+  description    String       @default("")
+  /// e.g. ["bug.created", "test_run.completed", "release.approved"]
+  events         String[]
+  secretEnc      String
+  enabled        Boolean      @default(true)
+  createdById    String       @db.Uuid
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  deliveries WebhookDelivery[]
+
+  @@index([organizationId])
+  @@map("webhook")
+}
+
+enum DeliveryStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+model WebhookDelivery {
+  id            String         @id @default(uuid()) @db.Uuid
+  webhookId     String         @db.Uuid
+  webhook       Webhook        @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  /// Stable per event so receivers can de-duplicate (sent as a header)
+  eventId       String         @db.Uuid
+  event         String
+  payload       Json
+  status        DeliveryStatus @default(PENDING)
+  attempts      Int            @default(0)
+  responseCode  Int?
+  nextAttemptAt DateTime?
+  createdAt     DateTime       @default(now())
+  deliveredAt   DateTime?
+
+  @@unique([webhookId, eventId])
+  @@index([status, nextAttemptAt])
+  @@map("webhook_delivery")
+}
+
+enum IntegrationType {
+  JIRA
+  GITLAB
+  GITHUB
+  SLACK
+  TEAMS
+}
+
+model Integration {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @db.Uuid
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// null = org-wide (e.g. Slack); set for per-project sync (e.g. Jira project mapping)
+  projectId      String?         @db.Uuid
+  type           IntegrationType
+  name           String
+  /// Non-secret settings: base URL, project key, field and status mappings, channel
+  config         Json            @default("{}")
+  /// Encrypted credentials / OAuth tokens
+  secretsEnc     String?
+  enabled        Boolean         @default(true)
+  status         String          @default("ok")
+  lastSyncAt     DateTime?
+  createdById    String          @db.Uuid
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  links ExternalLink[]
+
+  @@index([organizationId, type])
+  @@map("integration")
+}
+
+/// Two-way sync mapping between a QAForge item and an external issue.
+model ExternalLink {
+  id            String      @id @default(uuid()) @db.Uuid
+  integrationId String      @db.Uuid
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  /// "bug" | "requirement"
+  entityType    String
+  entityId      String      @db.Uuid
+  externalId    String
+  externalKey   String?
+  externalUrl   String?
+  /// Hash of last synced fields, to detect which side changed
+  syncHash      String?
+  lastSyncedAt  DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@unique([integrationId, externalId])
+  @@unique([integrationId, entityType, entityId])
+  @@map("external_link")
+}
+
+model Notification {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String?      @db.Uuid
+  userId         String       @db.Uuid
+  /// e.g. "bug.assigned", "testcase.review_requested", "release.approval_requested", "mention"
+  type           String
+  title          String
+  body           String       @default("")
+  entityType     String?
+  entityId       String?      @db.Uuid
+  url            String?
+  actorId        String?      @db.Uuid
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([userId, readAt, createdAt])
+  @@map("notification")
+}
