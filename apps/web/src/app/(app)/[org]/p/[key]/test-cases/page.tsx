@@ -19,6 +19,7 @@ import { useCan } from '@/hooks/use-permission';
 import {
   activeFilterCount,
   DEFAULT_VIEW,
+  PAGE_SIZES,
   normalizeView,
   REVIEW_VIEW,
   toQueryString,
@@ -74,6 +75,7 @@ function TestCasesWorkspace({ projectId, review }: { projectId: string; review: 
   const [selection, setSelection] = useState<RowSelectionState>({});
   const [createOpen, setCreateOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const setView = useCallback(
     (v: TestCaseViewState) => {
@@ -164,7 +166,11 @@ function TestCasesWorkspace({ projectId, review }: { projectId: string; review: 
               searchRef={searchRef}
             />
           </div>
-          <div className="relative min-h-64 flex-1 overflow-auto" aria-busy={list.isFetching}>
+          <div
+            ref={scrollRef}
+            className="relative min-h-64 flex-1 overflow-auto"
+            aria-busy={list.isFetching}
+          >
             {list.isLoading ? (
               <div className="grid gap-2 p-4">
                 {Array.from({ length: 8 }, (_, i) => (
@@ -203,6 +209,7 @@ function TestCasesWorkspace({ projectId, review }: { projectId: string; review: 
                 selection={selection}
                 setSelection={setSelection}
                 role={org.role}
+                scrollRef={scrollRef}
               />
             )}
             <BulkBar
@@ -214,9 +221,25 @@ function TestCasesWorkspace({ projectId, review }: { projectId: string; review: 
           </div>
           {data && data.total > 0 && (
             <div className="flex items-center justify-between gap-2 border-t px-3 py-2 text-sm text-muted-foreground">
-              <span>
-                {(data.page - 1) * data.pageSize + 1}–
-                {Math.min(data.page * data.pageSize, data.total)} of {data.total}
+              <span className="flex items-center gap-3">
+                <span>
+                  {(data.page - 1) * data.pageSize + 1}–
+                  {Math.min(data.page * data.pageSize, data.total)} of {data.total.toLocaleString()}
+                </span>
+                <label className="flex items-center gap-1.5">
+                  <span className="sr-only sm:not-sr-only">Rows per page</span>
+                  <select
+                    className="h-7 rounded-md border bg-background px-1.5 text-foreground"
+                    value={view.pageSize}
+                    onChange={(e) => setView({ ...view, pageSize: Number(e.target.value) })}
+                  >
+                    {PAGE_SIZES.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </span>
               <div className="flex items-center gap-1">
                 <Button

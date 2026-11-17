@@ -72,3 +72,19 @@ https://www.figma.com/design/1r4qeekenErekQjLcqfbHN
 - Screens: 01 Run execution, 02 Bugs board, 03 Bug detail, 04 Quick report, 05 Test runs.
 - Status never relies on colour alone: every result and severity has an icon or glyph plus a label (WCAG 1.4.1).
 - New tokens added for this: `destructive-text/-subtle`, `success-subtle`, `warning-subtle`, `primary-subtle`, `blocked`, `blocked-text/-subtle`.
+
+## List performance (NFR: 10,000 test cases in under 1 s)
+
+Measured on the `PERF` fixture (`pnpm db:perf-fixture`: 10,000 cases, 30,000 steps, 20 suites):
+
+| Check | Result | Budget |
+| --- | --- | --- |
+| API, 50-row page (first, last, sorted, filtered, searched) | 26–41 ms | 500 ms (`apps/api/src/perf.e2e.test.ts`) |
+| API, 500-row page | 56–61 ms | 500 ms |
+| Browser, click "Test cases" → rows painted | ~300 ms | 1,000 ms (`apps/web/e2e/perf.spec.ts`) |
+| Database, worst query (title sort, last page) | 12 ms | — |
+
+- **Offset pagination stays.** At 10k rows page 200 costs about 2 ms more than page 1 (index scan on `(projectId, seq)` plus an in-memory sort of about 1 MB). Keyset pagination would only pay off around 100k+ rows per project; it is the planned next step if a project gets there.
+- **No new indexes.** Every list query uses the `(projectId, seq)` unique index; extra sort indexes would slow down writes for no measurable gain at this size.
+- **Virtualised table body.** Pages of more than 100 rows (100, 250 or 500 per page) render only the rows in view with `@tanstack/react-virtual`, keeping real `<tr>` elements, `aria-rowcount` and `aria-rowindex` for screen readers.
+- Both timed checks run in CI on every push.

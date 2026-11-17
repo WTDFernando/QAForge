@@ -46,7 +46,7 @@ jobs:
           # Rate limiting stays on, but every browser test signs in from the same address.
           RATE_LIMIT_AUTH_PER_MIN: '1000'
         run: |
-          pnpm db:deploy && pnpm db:seed
+          pnpm db:deploy && pnpm db:seed && pnpm db:perf-fixture
           (cd apps/api && node dist/main.js &)
           (cd apps/worker && node dist/main.js &)
           (cd apps/web && pnpm start &)

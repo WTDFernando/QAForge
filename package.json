@@ -2,7 +2,9 @@
   "name": "qaforge",
   "private": true,
   "packageManager": "pnpm@10.28.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --concurrency 20",
@@ -13,7 +15,8 @@
     "db:migrate": "pnpm --filter @qaforge/db migrate:dev",
     "db:deploy": "pnpm --filter @qaforge/db migrate:deploy",
     "db:seed": "pnpm --filter @qaforge/db seed",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "db:perf-fixture": "pnpm --filter @qaforge/db perf-fixture"
   },
   "devDependencies": {
     "prettier": "^3.6.2",

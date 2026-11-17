@@ -1,4 +1,5 @@
 'use client';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useMemo } from 'react';
 import Link from 'next/link';
 import {
@@ -56,6 +57,7 @@ export function TestCaseTable({
   selection,
   setSelection,
   role,
+  scrollRef,
 }: {
   projectId: string;
   rows: TestCaseRow[];
@@ -65,6 +67,8 @@ export function TestCaseTable({
   selection: RowSelectionState;
   setSelection: (s: RowSelectionState) => void;
   role: Role;
+  /** The scrolling element around the table (enables row virtualisation on large pages). */
+  scrollRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   // Only the stable `mutate` functions go into the column memo; the mutation objects change every render.
   const { mutate: setStatusMutate } = useSetTestCaseStatus(projectId);
@@ -303,8 +307,70 @@ export function TestCaseTable({
     });
   };
 
+  const modelRows = table.getRowModel().rows;
+  // Large pages (100+ rows) render only the rows in view: a 500-row page stays as fast as a 50-row one.
+  const virtual = modelRows.length > 100;
+  const virtualizer = useVirtualizer({
+    count: modelRows.length,
+    getScrollElement: () => scrollRef?.current ?? null,
+    estimateSize: () => 41,
+    overscan: 15,
+    enabled: virtual,
+  });
+  const items = virtualizer.getVirtualItems();
+  const padTop = virtual && items.length ? items[0]!.start : 0;
+  const padBottom = virtual && items.length ? virtualizer.getTotalSize() - items.at(-1)!.end : 0;
+  const colCount = (modelRows[0]?.getVisibleCells().length ?? 1) + (canWrite ? 1 : 0);
+
+  const renderRow = (row: (typeof modelRows)[number]) => {
+    if (row.getIsGrouped()) {
+      const value = row.groupingValue as string;
+      return (
+        <TableRow key={row.id} className="bg-muted/40 hover:bg-muted/40">
+          <TableCell
+            colSpan={row.getVisibleCells().length + (canWrite ? 1 : 0)}
+            className="py-1.5 text-xs font-semibold"
+          >
+            <span className="inline-flex items-center gap-1">
+              <ChevronRight className="size-3 rotate-90" />{' '}
+              {view.groupBy === 'suite' ? value : humanize(value)}{' '}
+              <span className="font-normal text-muted-foreground">({row.subRows.length})</span>
+            </span>
+          </TableCell>
+        </TableRow>
+      );
+    }
+    const t = row.original;
+    return (
+      <TableRow
+        key={row.id}
+        aria-rowindex={row.index + 2}
+        data-state={row.getIsSelected() ? 'selected' : undefined}
+        className={cn(t.status === 'DEPRECATED' && 'opacity-60')}
+        draggable={canWrite}
+        onDragStart={(e) => {
+          const ids = row.getIsSelected() ? Object.keys(selection) : [t.id];
+          e.dataTransfer.setData(TC_DRAG_TYPE, JSON.stringify(ids));
+          e.dataTransfer.setData('text/plain', ids.length > 1 ? `${ids.length} test cases` : t.ref);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+      >
+        {canWrite && (
+          <TableCell className="w-4 cursor-grab px-0 text-muted-foreground/50">
+            <GripVertical className="size-3.5" aria-hidden />
+          </TableCell>
+        )}
+        {row.getVisibleCells().map((cell) => (
+          <TableCell key={cell.id}>
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </TableCell>
+        ))}
+      </TableRow>
+    );
+  };
+
   return (
-    <Table>
+    <Table aria-rowcount={modelRows.length + 1}>
       <TableHeader className="sticky top-0 z-10 bg-background">
         {table.getHeaderGroups().map((hg) => (
           <TableRow key={hg.id} className="hover:bg-transparent">
@@ -341,56 +407,19 @@ export function TestCaseTable({
         ))}
       </TableHeader>
       <TableBody>
-        {table.getRowModel().rows.map((row) => {
-          if (row.getIsGrouped()) {
-            const value = row.groupingValue as string;
-            return (
-              <TableRow key={row.id} className="bg-muted/40 hover:bg-muted/40">
-                <TableCell
-                  colSpan={row.getVisibleCells().length + (canWrite ? 1 : 0)}
-                  className="py-1.5 text-xs font-semibold"
-                >
-                  <span className="inline-flex items-center gap-1">
-                    <ChevronRight className="size-3 rotate-90" />{' '}
-                    {view.groupBy === 'suite' ? value : humanize(value)}{' '}
-                    <span className="font-normal text-muted-foreground">
-                      ({row.subRows.length})
-                    </span>
-                  </span>
-                </TableCell>
-              </TableRow>
-            );
-          }
-          const t = row.original;
-          return (
-            <TableRow
-              key={row.id}
-              data-state={row.getIsSelected() ? 'selected' : undefined}
-              className={cn(t.status === 'DEPRECATED' && 'opacity-60')}
-              draggable={canWrite}
-              onDragStart={(e) => {
-                const ids = row.getIsSelected() ? Object.keys(selection) : [t.id];
-                e.dataTransfer.setData(TC_DRAG_TYPE, JSON.stringify(ids));
-                e.dataTransfer.setData(
-                  'text/plain',
-                  ids.length > 1 ? `${ids.length} test cases` : t.ref,
-                );
-                e.dataTransfer.effectAllowed = 'move';
-              }}
-            >
-              {canWrite && (
-                <TableCell className="w-4 cursor-grab px-0 text-muted-foreground/50">
-                  <GripVertical className="size-3.5" aria-hidden />
-                </TableCell>
-              )}
-              {row.getVisibleCells().map((cell) => (
-                <TableCell key={cell.id}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </TableCell>
-              ))}
-            </TableRow>
-          );
-        })}
+        {virtual && padTop > 0 && (
+          <tr aria-hidden style={{ height: padTop }}>
+            <td colSpan={colCount} />
+          </tr>
+        )}
+        {(virtual ? items.map((vi) => modelRows[vi.index]!) : modelRows).map((row) =>
+          renderRow(row),
+        )}
+        {virtual && padBottom > 0 && (
+          <tr aria-hidden style={{ height: padBottom }}>
+            <td colSpan={colCount} />
+          </tr>
+        )}
       </TableBody>
     </Table>
   );

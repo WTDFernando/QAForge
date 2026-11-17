@@ -60,6 +60,9 @@ export const REVIEW_VIEW: TestCaseViewState = {
   dir: 'desc',
 };
 
+/** Rows per page offered in the list footer (pages over 100 rows are virtualised). */
+export const PAGE_SIZES = [50, 100, 250, 500];
+
 /** Merge a stored (possibly older/partial) config over defaults, dropping unknown values. */
 export function normalizeView(config: unknown): TestCaseViewState {
   const c = (config && typeof config === 'object' ? config : {}) as Partial<TestCaseViewState>;
@@ -75,6 +78,9 @@ export function normalizeView(config: unknown): TestCaseViewState {
       TC_COLUMNS.some((col) => col.id === id),
     ),
     groupBy: GROUP_BY.includes(c.groupBy as GroupBy) ? (c.groupBy as GroupBy) : 'none',
+    pageSize: PAGE_SIZES.includes(c.pageSize as number)
+      ? (c.pageSize as number)
+      : DEFAULT_VIEW.pageSize,
   };
 }
 
