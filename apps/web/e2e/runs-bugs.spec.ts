@@ -111,3 +111,21 @@ test('bug workflow and notifications', async ({ page }) => {
     page.getByRole('list', { name: 'Workflow' }).getByText('Ready for retest'),
   ).toHaveAttribute('aria-current', 'step');
 });
+
+test('owner gives a client a different role in one project', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('owner@qaforge.dev');
+  await page.getByLabel('Password').fill('qaforge-demo-1');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(/\/acme/);
+  await page.goto('/acme/p/MOB/settings');
+  const role = page.getByRole('combobox', { name: 'Role of Casey Client in this project' });
+  await role.click();
+  await page.getByRole('option', { name: 'QA Engineer' }).click();
+  await expect(page.getByText('Casey Client: QA Engineer in this project')).toBeVisible();
+  await role.click();
+  await page.getByRole('option', { name: /Same as organization/ }).click();
+  await expect(
+    page.getByText('Casey Client: uses organization role in this project'),
+  ).toBeVisible();
+});

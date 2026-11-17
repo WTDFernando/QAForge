@@ -7,15 +7,15 @@ Status: **proposal, waiting for product owner review.** No feature code for the 
 
 ## 1. Build plan (prompt 3) vs. what exists
 
-| Plan phase | Scope | Status |
-|---|---|---|
-| **0 Foundation** | Monorepo, Docker Compose, auth + RBAC, orgs/projects, shell + Ctrl+K, CI, seed | ✅ Built. Compose runs Postgres + Redis; files use local disk in dev / S3 in prod (approved replacement for MinIO, whose Docker image was removed). |
-| **1 Core QA** | Requirements, test cases, **test runs**, **bugs**, traceability, dashboard | ✅ Requirements, test cases, traceability (req ↔ TC), dashboard. ⏳ **Test runs, bugs** |
-| **2 AI agents** | Framework, Requirement, Writer, Reviewer, **Bug Agent**, review queue, usage | ✅ All except ⏳ **Bug Agent** (needs bugs) |
-| 3 Automation | API testing, Playwright runner, schedules, CI webhooks, Automation + Failure Analysis agents | ⏳ |
-| 4 Releases & reports | Releases, gates, approvals, reports, exports, share links, Report Agent | ⏳ |
-| 5 Integrations & polish | Jira/GitLab sync, Slack/Teams, public API + webhooks + MCP, Copilot, perf, onboarding wizard | ✅ QA Copilot (built early). ⏳ rest |
-| 6+ Future | k6, ZAP, axe, visual | Nav slots + feature flags exist |
+| Plan phase              | Scope                                                                                        | Status                                                                                                                                              |
+| ----------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **0 Foundation**        | Monorepo, Docker Compose, auth + RBAC, orgs/projects, shell + Ctrl+K, CI, seed               | ✅ Built. Compose runs Postgres + Redis; files use local disk in dev / S3 in prod (approved replacement for MinIO, whose Docker image was removed). |
+| **1 Core QA**           | Requirements, test cases, **test runs**, **bugs**, traceability, dashboard                   | ✅ Requirements, test cases, traceability (req ↔ TC), dashboard. ⏳ **Test runs, bugs**                                                             |
+| **2 AI agents**         | Framework, Requirement, Writer, Reviewer, **Bug Agent**, review queue, usage                 | ✅ All except ⏳ **Bug Agent** (needs bugs)                                                                                                         |
+| 3 Automation            | API testing, Playwright runner, schedules, CI webhooks, Automation + Failure Analysis agents | ⏳                                                                                                                                                  |
+| 4 Releases & reports    | Releases, gates, approvals, reports, exports, share links, Report Agent                      | ⏳                                                                                                                                                  |
+| 5 Integrations & polish | Jira/GitLab sync, Slack/Teams, public API + webhooks + MCP, Copilot, perf, onboarding wizard | ✅ QA Copilot (built early). ⏳ rest                                                                                                                |
+| 6+ Future               | k6, ZAP, axe, visual                                                                         | Nav slots + feature flags exist                                                                                                                     |
 
 **Proposed next phase: "Phase 1 completion"**: test runs, bugs, test case ↔ bug traceability, the Bug Agent, and the NFR hardening listed in §5 for everything built so far.
 
@@ -101,12 +101,12 @@ Requirement ──< RequirementTestCase >── TestCase ──< TestRunResult >
 
 ### What's new, by phase
 
-| Phase | Models |
-|---|---|
-| next | `TestRun`, `TestRunResult`, `Bug`, `TestCaseBug`, `Comment`, `Notification`, `CustomField`, `Template`, `ProjectMember` (pending decision), `Attachment` scan + annotations |
-| 3 | `ApiCollection`, `ApiRequest`, `AutomationTest`, `AutomationRun`, `AutomationResult`, `AutomationSchedule` |
-| 4 | `Release`, `ReleaseItem`, `QualityGate`, `Approval`, `Report`, `ReportSchedule` |
-| 5 | `ApiToken`, `Webhook`, `WebhookDelivery`, `Integration`, `ExternalLink` |
+| Phase | Models                                                                                                                                                                      |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| next  | `TestRun`, `TestRunResult`, `Bug`, `TestCaseBug`, `Comment`, `Notification`, `CustomField`, `Template`, `ProjectMember` (pending decision), `Attachment` scan + annotations |
+| 3     | `ApiCollection`, `ApiRequest`, `AutomationTest`, `AutomationRun`, `AutomationResult`, `AutomationSchedule`                                                                  |
+| 4     | `Release`, `ReleaseItem`, `QualityGate`, `Approval`, `Report`, `ReportSchedule`                                                                                             |
+| 5     | `ApiToken`, `Webhook`, `WebhookDelivery`, `Integration`, `ExternalLink`                                                                                                     |
 
 All 30 entities from the brief's minimum data model are covered. Naming differences: `AiUsage` exists; `Environment`/`Integration`/`Attachment`/`AgentJob`/`AuditLog` exist or are added as named; the brief's `RequirementSource(file)` exists.
 
@@ -132,14 +132,14 @@ Existing: server-side pagination, composite indexes, trigram search indexes. Nex
 
 ## 5. NFR gaps in existing features (proposed for the next phase)
 
-| Requirement | Today | Planned |
-|---|---|---|
-| Signed URLs for files | Authenticated download endpoint | Short-lived HMAC-signed URLs (local) / presigned URLs (S3) |
-| Rate limiting | None | Redis-backed limits per IP, user and token (stricter on auth and AI endpoints) |
-| Uploads scanned | Type and size checks only | ClamAV scan in the worker; files unusable until CLEAN |
-| Daily DB backups | None | `infra/backup`: nightly `pg_dump` to S3 with 30-day retention + restore guide |
-| Disable AI per organization | Per-agent switches | Master "AI off" switch in Settings → AI |
-| Never send secrets to AI | Secrets are never part of agent input | Plus a redaction pass on all agent input (keys, tokens, passwords, environment secret values) |
-| 10k list in < 1 s | Paginated | Perf fixture + virtualised tables (§4) |
-| README per app, ADRs | Root README, DECISIONS.md | `apps/*/README.md`, `docs/adr/` |
-| axe check per feature | Main pages | Extend to every new screen |
+| Requirement                 | Today                                 | Planned                                                                                       |
+| --------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Signed URLs for files       | Authenticated download endpoint       | Short-lived HMAC-signed URLs (local) / presigned URLs (S3)                                    |
+| Rate limiting               | None                                  | Redis-backed limits per IP, user and token (stricter on auth and AI endpoints)                |
+| Uploads scanned             | Type and size checks only             | ClamAV scan in the worker; files unusable until CLEAN                                         |
+| Daily DB backups            | None                                  | `infra/backup`: nightly `pg_dump` to S3 with 30-day retention + restore guide                 |
+| Disable AI per organization | Per-agent switches                    | Master "AI off" switch in Settings → AI                                                       |
+| Never send secrets to AI    | Secrets are never part of agent input | Plus a redaction pass on all agent input (keys, tokens, passwords, environment secret values) |
+| 10k list in < 1 s           | Paginated                             | Perf fixture + virtualised tables (§4)                                                        |
+| README per app, ADRs        | Root README, DECISIONS.md             | `apps/*/README.md`, `docs/adr/`                                                               |
+| axe check per feature       | Main pages                            | Extend to every new screen                                                                    |
