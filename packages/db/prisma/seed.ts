@@ -65,6 +65,7 @@ async function main() {
     });
   }
   await seedPaymentsContent(org.id, ownerId);
+  await seedRunsAndBugs(org.id);
   console.log(`Seeded org "${org.name}" with ${USERS.length} users. Password: ${PASSWORD}`);
 }
 
@@ -391,6 +392,321 @@ async function seedPaymentsContent(orgId: string, userId: string) {
         position: 1,
         createdById: userId,
       },
+    ],
+    skipDuplicates: true,
+  });
+}
+
+/** Demo test runs (active, completed, planned) and bugs on the board for Payments. */
+async function seedRunsAndBugs(orgId: string) {
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { organizationId_key: { organizationId: orgId, key: 'PAY' } },
+  });
+  if ((await prisma.testRun.count({ where: { projectId: project.id } })) > 0) return;
+  const users = Object.fromEntries(
+    (await prisma.user.findMany({ where: { email: { in: USERS.map((u) => u.email) } } })).map(
+      (u) => [u.email.split('@')[0], u.id],
+    ),
+  ) as Record<'owner' | 'lead' | 'qa' | 'dev' | 'client', string>;
+  const staging = await prisma.environment.findFirst({
+    where: { projectId: project.id, name: 'Staging' },
+  });
+  const cases = await prisma.testCase.findMany({
+    where: { projectId: project.id, deletedAt: null },
+    include: { steps: { orderBy: { position: 'asc' }, include: { sharedStep: true } } },
+    orderBy: { seq: 'asc' },
+  });
+  const ref = (kind: string, n: number) => `${kind}-${String(n).padStart(4, '0')}`;
+  const snapshotOf = (tc: (typeof cases)[number]) => ({
+    ref: ref('TC', tc.seq),
+    title: tc.title,
+    preconditions: tc.preconditions,
+    steps: tc.steps.flatMap((s) =>
+      s.sharedStep
+        ? (s.sharedStep.steps as { action: string; expected: string }[])
+        : [{ action: s.action, expected: s.expected }],
+    ),
+    testData: tc.testData,
+    priority: tc.priority,
+    type: tc.type,
+  });
+  const day = 24 * 3600_000;
+  const runs = [
+    {
+      seq: 1,
+      name: 'Payments smoke · nightly',
+      status: 'COMPLETED' as const,
+      build: 'nightly-1115',
+      pattern: ['PASSED', 'PASSED', 'PASSED', 'PASSED', 'PASSED', 'FAILED', 'PASSED', 'PASSED'],
+      dueAt: new Date(Date.now() - 2 * day),
+    },
+    {
+      seq: 2,
+      name: 'Release 2.4 regression',
+      status: 'IN_PROGRESS' as const,
+      build: '2.4.0-rc1',
+      pattern: [
+        'PASSED',
+        'PASSED',
+        'FAILED',
+        'UNTESTED',
+        'BLOCKED',
+        'PASSED',
+        'RETEST',
+        'SKIPPED',
+        'UNTESTED',
+        'PASSED',
+      ],
+      dueAt: new Date(Date.now() + 3 * day),
+    },
+    {
+      seq: 3,
+      name: 'Release 2.5 regression',
+      status: 'PLANNED' as const,
+      build: null,
+      pattern: [],
+      dueAt: new Date(Date.now() + 16 * day),
+    },
+  ];
+  const resultIds: Record<string, string> = {};
+  for (const r of runs) {
+    const run = await prisma.testRun.create({
+      data: {
+        projectId: project.id,
+        seq: r.seq,
+        name: r.name,
+        status: r.status,
+        build: r.build,
+        environmentId: staging?.id,
+        dueAt: r.dueAt,
+        startedAt: r.status === 'PLANNED' ? null : new Date(Date.now() - 3 * day),
+        completedAt: r.status === 'COMPLETED' ? new Date(Date.now() - 2 * day) : null,
+        createdById: users.lead,
+        updatedById: users.lead,
+      },
+    });
+    let position = 0;
+    for (const tc of cases) {
+      const snap = snapshotOf(tc);
+      const rows = (tc.testData as { rows?: unknown[] } | null)?.rows?.length ?? 0;
+      for (const dataRowIndex of rows ? [...Array(rows).keys()] : [null]) {
+        const status = (r.pattern[position % Math.max(r.pattern.length, 1)] ?? 'UNTESTED') as
+          'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED' | 'RETEST' | 'UNTESTED';
+        const executed = !['UNTESTED', 'RETEST'].includes(status);
+        const res = await prisma.testRunResult.create({
+          data: {
+            testRunId: run.id,
+            testCaseId: tc.id,
+            testCaseVersion: tc.version,
+            position: position++,
+            snapshot: snap,
+            dataRowIndex,
+            status,
+            assigneeId: position % 3 === 0 ? users.lead : users.qa,
+            executedById: executed ? users.qa : null,
+            executedAt: executed ? new Date(Date.now() - day) : null,
+            durationSec: executed ? 60 + ((position * 37) % 240) : null,
+            stepResults:
+              status === 'FAILED'
+                ? snap.steps.map((_, index) => ({
+                    index,
+                    status: index === snap.steps.length - 1 ? 'FAILED' : 'PASSED',
+                    actual:
+                      index === snap.steps.length - 1
+                        ? 'An error banner appeared instead of the expected result.'
+                        : '',
+                  }))
+                : undefined,
+          },
+        });
+        if (status === 'FAILED' && !resultIds[`${r.seq}`]) resultIds[`${r.seq}`] = res.id;
+      }
+    }
+  }
+  const bugs: {
+    title: string;
+    status: 'NEW' | 'TRIAGED' | 'IN_PROGRESS' | 'FIXED' | 'READY_FOR_RETEST' | 'CLOSED';
+    severity: 'BLOCKER' | 'CRITICAL' | 'MAJOR' | 'MINOR' | 'TRIVIAL';
+    priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    component: string;
+    assignee?: keyof typeof users;
+    ai?: number;
+    fromRun?: string;
+  }[] = [
+    {
+      title: 'Expired discount code is still applied at payment',
+      status: 'NEW',
+      severity: 'CRITICAL',
+      priority: 'HIGH',
+      component: 'Checkout',
+      fromRun: '2',
+    },
+    {
+      title: 'Pay button overlaps the order total on small screens',
+      status: 'NEW',
+      severity: 'MAJOR',
+      priority: 'HIGH',
+      component: 'Checkout',
+      ai: 0.82,
+    },
+    {
+      title: 'Typo in refund confirmation email subject',
+      status: 'NEW',
+      severity: 'TRIVIAL',
+      priority: 'LOW',
+      component: 'Emails',
+    },
+    {
+      title: 'Saved card list loads slowly with 20+ cards',
+      status: 'TRIAGED',
+      severity: 'MAJOR',
+      priority: 'MEDIUM',
+      component: 'Accounts',
+      assignee: 'dev',
+    },
+    {
+      title: 'Address form accepts a 3-digit postcode',
+      status: 'TRIAGED',
+      severity: 'MINOR',
+      priority: 'MEDIUM',
+      component: 'Accounts',
+      ai: 0.74,
+    },
+    {
+      title: '3-D Secure popup closes on mobile Safari',
+      status: 'IN_PROGRESS',
+      severity: 'BLOCKER',
+      priority: 'CRITICAL',
+      component: 'Checkout',
+      assignee: 'dev',
+    },
+    {
+      title: 'Order history shows the wrong currency',
+      status: 'IN_PROGRESS',
+      severity: 'MAJOR',
+      priority: 'HIGH',
+      component: 'Accounts',
+      assignee: 'dev',
+    },
+    {
+      title: 'Discount line missing on PDF invoice',
+      status: 'FIXED',
+      severity: 'MINOR',
+      priority: 'LOW',
+      component: 'Billing',
+      assignee: 'dev',
+    },
+    {
+      title: 'Partial refund rounds to whole dollars',
+      status: 'READY_FOR_RETEST',
+      severity: 'CRITICAL',
+      priority: 'HIGH',
+      component: 'Refunds',
+      assignee: 'qa',
+      fromRun: '1',
+    },
+    {
+      title: 'Session expires during a long checkout',
+      status: 'CLOSED',
+      severity: 'MAJOR',
+      priority: 'MEDIUM',
+      component: 'Checkout',
+    },
+  ];
+  const rank: Record<string, number> = {};
+  for (const [i, b] of bugs.entries()) {
+    rank[b.status] = (rank[b.status] ?? 0) + 1024;
+    const resultId = b.fromRun ? resultIds[b.fromRun] : undefined;
+    const result = resultId
+      ? await prisma.testRunResult.findUnique({ where: { id: resultId } })
+      : null;
+    const snap = result?.snapshot as { steps: { action: string; expected: string }[] } | undefined;
+    const bug = await prisma.bug.create({
+      data: {
+        projectId: project.id,
+        seq: i + 1,
+        title: b.title,
+        status: b.status,
+        resolution: b.status === 'CLOSED' ? 'FIXED' : null,
+        closedAt: b.status === 'CLOSED' ? new Date() : null,
+        severity: b.severity,
+        priority: b.priority,
+        component: b.component,
+        assigneeId: b.assignee ? users[b.assignee] : null,
+        environmentId: staging?.id,
+        envDetails: { browser: 'Chrome 141', os: 'Windows', build: '2.4.0-rc1' },
+        stepsToReproduce: snap
+          ? snap.steps.map((s) => s.action)
+          : ['Sign in as a shopper', 'Open Checkout', 'Continue to the payment step'],
+        expectedResult: snap?.steps.at(-1)?.expected ?? 'The page works as specified.',
+        actualResult: 'An error banner appeared instead of the expected result.',
+        testRunResultId: result?.id,
+        failedStepIndex: snap ? snap.steps.length - 1 : null,
+        rank: rank[b.status],
+        aiGenerated: b.ai !== undefined,
+        aiNotes:
+          b.ai !== undefined
+            ? {
+                confidence: b.ai,
+                rationale:
+                  'Drafted from a screenshot and a one-line note; severity reflects a blocked purchase.',
+                missingInfo: ['Which account was signed in?'],
+                duplicates: [],
+                model: 'fake-model',
+              }
+            : undefined,
+        createdById: b.ai !== undefined ? users.qa : users.lead,
+        updatedById: users.lead,
+        testCases: result?.testCaseId
+          ? { create: [{ testCaseId: result.testCaseId, createdById: users.lead }] }
+          : undefined,
+      },
+    });
+    if (i === 0) {
+      await prisma.comment.create({
+        data: {
+          projectId: project.id,
+          entityType: 'bug',
+          entityId: bug.id,
+          authorId: users.dev,
+          body: {
+            type: 'doc',
+            content: [
+              {
+                type: 'paragraph',
+                content: [
+                  {
+                    type: 'text',
+                    text: 'The expiry check runs before the cart is re-priced. Looking at it today.',
+                  },
+                ],
+              },
+            ],
+          },
+          bodyText: 'The expiry check runs before the cart is re-priced. Looking at it today.',
+        },
+      });
+    }
+    if (b.assignee === 'qa' || b.assignee === 'dev') {
+      await prisma.notification.create({
+        data: {
+          organizationId: orgId,
+          projectId: project.id,
+          userId: users[b.assignee],
+          type: b.status === 'READY_FOR_RETEST' ? 'bug.ready_for_retest' : 'bug.assigned',
+          title: `${ref('BUG', i + 1)} ${b.status === 'READY_FOR_RETEST' ? 'is ready for retest' : 'was assigned to you'}`,
+          body: b.title,
+          entityType: 'bug',
+          entityId: bug.id,
+          actorId: users.lead,
+        },
+      });
+    }
+  }
+  await prisma.projectCounter.createMany({
+    data: [
+      { projectId: project.id, kind: 'testRun', value: runs.length },
+      { projectId: project.id, kind: 'bug', value: bugs.length },
     ],
     skipDuplicates: true,
   });

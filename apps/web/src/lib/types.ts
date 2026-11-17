@@ -1,4 +1,12 @@
 import type {
+  BugResolution,
+  BugSeverity,
+  BugStatus,
+  ResultStatus,
+  StepResult,
+  TestRunStatus,
+} from '@qaforge/shared';
+import type {
   AutomationStatus,
   Role,
   Priority,
@@ -247,8 +255,16 @@ export interface Dashboard {
     highPriorityCoveragePct: number | null;
   };
   testCases: { total: number; byStatus: Record<TestCaseStatus, number>; aiDraftsToReview: number };
-  lastRun: null | { passRate: number };
-  openBugsBySeverity: null | Record<string, number>;
+  lastRun: null | {
+    id: string;
+    ref: string;
+    name: string;
+    status: TestRunStatus;
+    passRate: number | null;
+    total: number;
+    failed: number;
+  };
+  openBugsBySeverity: null | Record<BugSeverity, number>;
   releaseReadiness: null | { score: number };
   attention: {
     toReview: {
@@ -260,5 +276,205 @@ export interface Dashboard {
       updatedAt: string;
     }[];
     uncoveredHighPriority: { id: string; ref: string; title: string; priority: Priority }[];
+    failedTests: {
+      resultId: string;
+      ref: string;
+      title: string;
+      run: { id: string; ref: string };
+      hasBug: boolean;
+    }[];
+    myBugs: { id: string; ref: string; title: string; severity: BugSeverity; status: BugStatus }[];
   };
+}
+
+// ---- test runs & bugs (Phase 1 core QA) --------------------------------------
+
+export interface RunCounts {
+  total: number;
+  byStatus: Record<ResultStatus, number>;
+  executed: number;
+  progressPct: number;
+  passRate: number | null;
+}
+
+export interface TestRunRow {
+  id: string;
+  seq: number;
+  ref: string;
+  name: string;
+  description: string;
+  status: TestRunStatus;
+  build: string | null;
+  dueAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  environment: { id: string; name: string; baseUrl?: string | null } | null;
+  counts: RunCounts;
+  createdAt: string;
+}
+
+export interface RunResultRow {
+  id: string;
+  testCaseId: string | null;
+  position: number;
+  status: ResultStatus;
+  assigneeId: string | null;
+  dataRowIndex: number | null;
+  executedAt: string | null;
+  ref: string;
+  title: string;
+  priority: Priority;
+  dataRow: Record<string, string> | null;
+  bugCount: number;
+}
+
+export interface RunSnapshot {
+  ref: string;
+  title: string;
+  preconditions: string;
+  steps: { action: string; expected: string }[];
+  testData: { columns: string[]; rows: string[][] } | null;
+  priority: Priority;
+  type: string;
+}
+
+export interface AttachmentRow {
+  id: string;
+  fileName: string;
+  contentType: string;
+  size: number;
+  scanStatus: 'PENDING' | 'CLEAN' | 'INFECTED' | 'FAILED' | 'SKIPPED';
+  annotations?: Annotation[] | null;
+  createdAt: string;
+}
+
+export interface Annotation {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label: string;
+  source: 'ai' | 'user';
+}
+
+export interface RunResultDetail {
+  id: string;
+  testRunId: string;
+  testCaseId: string | null;
+  status: ResultStatus;
+  snapshot: RunSnapshot;
+  stepResults: StepResult[] | null;
+  notes: string;
+  durationSec: number | null;
+  assigneeId: string | null;
+  dataRowIndex: number | null;
+  executedAt: string | null;
+  executedById: string | null;
+  bugs: { id: string; ref: string; title: string; status: BugStatus; severity: BugSeverity }[];
+  attachments: AttachmentRow[];
+}
+
+export interface BugRow {
+  id: string;
+  seq: number;
+  ref: string;
+  title: string;
+  status: BugStatus;
+  resolution: BugResolution | null;
+  severity: BugSeverity;
+  priority: Priority;
+  component: string | null;
+  assigneeId: string | null;
+  createdById: string;
+  rank: number;
+  aiGenerated: boolean;
+  createdAt: string;
+  updatedAt: string;
+  commentCount: number;
+  attachmentCount: number;
+  aiConfidence: number | null;
+  possibleDuplicate: { ref: string; similarity: number } | null;
+  _count: { testCases: number };
+}
+
+export interface BugDetail extends Omit<
+  BugRow,
+  'commentCount' | 'attachmentCount' | 'aiConfidence' | 'possibleDuplicate' | '_count'
+> {
+  description: unknown;
+  descriptionText: string;
+  stepsToReproduce: string[];
+  expectedResult: string;
+  actualResult: string;
+  envDetails: {
+    browser?: string;
+    os?: string;
+    device?: string;
+    build?: string;
+    url?: string;
+    viewport?: string;
+  };
+  environment: { id: string; name: string } | null;
+  duplicateOf: { id: string; ref: string; title: string; status: BugStatus } | null;
+  duplicates: { id: string; ref: string; title: string; status: BugStatus }[];
+  testCases: { id: string; ref: string; title: string; status: string }[];
+  foundIn: {
+    resultId: string;
+    run: { id: string; ref: string; name: string };
+    testCase: { ref: string; title: string } | null;
+    failedStep: { index: number; action: string; expected: string } | null;
+  } | null;
+  aiNotes: {
+    confidence?: number | null;
+    rationale?: string;
+    missingInfo?: string[];
+    duplicates?: { ref: string; similarity: number }[];
+    model?: string | null;
+  } | null;
+  attachments: AttachmentRow[];
+  version: number;
+  closedAt: string | null;
+}
+
+export interface CommentRow {
+  id: string;
+  body: unknown;
+  bodyText: string;
+  authorId: string;
+  author: { id: string; name: string; image: string | null };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NotificationRow {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  url: string | null;
+  /** In-app path resolved by the API (null when the item is gone). */
+  href: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface BugDraft {
+  draft: {
+    title: string;
+    summary: string;
+    stepsToReproduce: string[];
+    expectedResult: string;
+    actualResult: string;
+    severity: BugSeverity;
+    priority: Priority;
+    component: string | null;
+    envDetails: Record<string, string>;
+    environmentId: string | null;
+    attachmentId: string | null;
+    annotations: Annotation[];
+  };
+  confidence: number;
+  rationale: string;
+  missingInfo: string[];
+  duplicates: { id: string; ref: string; title: string; status: BugStatus; similarity: number }[];
 }

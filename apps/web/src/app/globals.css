@@ -29,6 +29,15 @@
   --input: oklch(0.91 0.005 260);
   --ring: oklch(0.52 0.2 268);
   --sidebar: oklch(0.975 0.003 260);
+  /* Run results and bug severity (Figma: QAForge tokens). Subtle = tinted background. */
+  --destructive-text: oklch(0.5 0.19 27);
+  --destructive-subtle: oklch(0.96 0.02 20);
+  --success-subtle: oklch(0.97 0.025 155);
+  --warning-subtle: oklch(0.975 0.035 85);
+  --primary-subtle: oklch(0.95 0.025 268);
+  --blocked: oklch(0.55 0.2 295);
+  --blocked-text: oklch(0.45 0.18 295);
+  --blocked-subtle: oklch(0.96 0.025 300);
 }
 
 .dark {
@@ -55,6 +64,14 @@
   --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.68 0.17 268);
   --sidebar: oklch(0.18 0.009 260);
+  --destructive-text: oklch(0.78 0.13 25);
+  --destructive-subtle: oklch(0.3 0.08 25);
+  --success-subtle: oklch(0.3 0.06 155);
+  --warning-subtle: oklch(0.32 0.06 75);
+  --primary-subtle: oklch(0.3 0.07 268);
+  --blocked: oklch(0.7 0.16 295);
+  --blocked-text: oklch(0.82 0.11 295);
+  --blocked-subtle: oklch(0.3 0.08 295);
 }
 
 @theme inline {
@@ -87,6 +104,14 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
+  --color-destructive-text: var(--destructive-text);
+  --color-destructive-subtle: var(--destructive-subtle);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-primary-subtle: var(--primary-subtle);
+  --color-blocked: var(--blocked);
+  --color-blocked-text: var(--blocked-text);
+  --color-blocked-subtle: var(--blocked-subtle);
 }
 
 @layer base {

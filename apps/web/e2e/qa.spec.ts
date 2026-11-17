@@ -17,7 +17,9 @@ test('dashboard shows real coverage and the attention list', async ({ page }) =>
   await page.goto(PAY);
   await expect(page.getByText('Requirements coverage')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'What needs my attention' })).toBeVisible();
-  await expect(page.getByText('Test runs arrive in Phase 4.')).toBeVisible();
+  await expect(page.getByText('Last run pass rate')).toBeVisible();
+  await expect(page.getByText(/\d+ failed of \d+ tests/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Failed tests in active runs' })).toBeVisible();
 });
 
 test('write a requirement with acceptance criteria, then add a linked test case', async ({

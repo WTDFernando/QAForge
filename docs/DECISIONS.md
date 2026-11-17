@@ -61,3 +61,14 @@ Where the brief offered alternatives, these were chosen. Ask to revisit any of t
 - **Project-level roles** ("members and roles per project"): today the organization role applies to every project. Proposal for Phase 7: optional per-project role override.
 - **i18n**: strings are English in components. Proposal: introduce `next-intl` in Phase 7 and extract strings then.
 - **Saved views / grouping for requirements**: requirements use a tree with search; the full list framework is on test cases. Will be reused for bugs and runs.
+
+## Design source (Figma)
+
+Core QA screens are designed in Figma first, then built to match:
+https://www.figma.com/design/1r4qeekenErekQjLcqfbHN
+
+- The `QAForge tokens` variable collection mirrors `apps/web/src/app/globals.css` (light mode; the Figma plan allows one mode, and dark mode lives in code only).
+- Components: Button, Result status, Severity, Nav item, Avatar, Kbd, Bug card, Sidebar, Topbar.
+- Screens: 01 Run execution, 02 Bugs board, 03 Bug detail, 04 Quick report, 05 Test runs.
+- Status never relies on colour alone: every result and severity has an icon or glyph plus a label (WCAG 1.4.1).
+- New tokens added for this: `destructive-text/-subtle`, `success-subtle`, `warning-subtle`, `primary-subtle`, `blocked`, `blocked-text/-subtle`.

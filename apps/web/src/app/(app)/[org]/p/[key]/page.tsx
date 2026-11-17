@@ -9,9 +9,9 @@ import {
   FileText,
   PlayCircle,
   Rocket,
-  Sparkles,
 } from 'lucide-react';
-import { humanize, TEST_CASE_STATUSES } from '@qaforge/shared';
+import { BUG_SEVERITIES, humanize, TEST_CASE_STATUSES } from '@qaforge/shared';
+import { ResultGlyph, SeverityBadge } from '@/components/qa/run-status';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shell/page-header';
@@ -85,10 +85,10 @@ export default function ProjectDashboardPage() {
     },
     {
       done: (d?.testCases.total ?? 0) > 0,
-      label: 'Write test cases (AI generation arrives in Phase 3)',
+      label: 'Write or generate test cases',
       href: `${base}/test-cases`,
     },
-    { done: false, label: 'Run your first test run (Phase 4)', href: undefined },
+    { done: !!d?.lastRun, label: 'Run your first test run', href: `${base}/runs` },
   ];
   const onboarding = !!d && steps.filter((s) => s.done).length < 3;
 
@@ -216,14 +216,80 @@ export default function ProjectDashboardPage() {
               </>
             )}
           </Metric>
-          <Metric title="Last run pass rate" icon={PlayCircle}>
-            <NotYet phase={4} what="Test runs" />
+          <Metric
+            title="Last run pass rate"
+            icon={PlayCircle}
+            footer={
+              d?.lastRun && (
+                <Link className="hover:underline" href={`${base}/runs/${d.lastRun.ref}`}>
+                  {d.lastRun.ref} · {d.lastRun.name}
+                </Link>
+              )
+            }
+          >
+            {!d ? (
+              <Skeleton className="h-8 w-20" />
+            ) : !d.lastRun ? (
+              <div>
+                <div className="text-2xl font-semibold text-muted-foreground">—</div>
+                <Link
+                  href={`${base}/runs`}
+                  className="mt-1 inline-block text-xs text-primary hover:underline"
+                >
+                  Plan your first run
+                </Link>
+              </div>
+            ) : (
+              <>
+                <div
+                  className={cn(
+                    'text-2xl font-semibold',
+                    d.lastRun.passRate === null
+                      ? 'text-muted-foreground'
+                      : d.lastRun.passRate >= 80
+                        ? 'text-success-text'
+                        : 'text-destructive-text',
+                  )}
+                >
+                  {d.lastRun.passRate === null ? '—' : `${d.lastRun.passRate}%`}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {d.lastRun.failed} failed of {d.lastRun.total} tests
+                </p>
+              </>
+            )}
           </Metric>
-          <Metric title="Open bugs by severity" icon={Bug}>
-            <NotYet phase={4} what="Bugs" />
+          <Metric
+            title="Open bugs by severity"
+            icon={Bug}
+            footer={
+              d?.openBugsBySeverity && (
+                <Link className="hover:underline" href={`${base}/bugs`}>
+                  Open the bug board
+                </Link>
+              )
+            }
+          >
+            {!d ? (
+              <Skeleton className="h-8 w-20" />
+            ) : (
+              <>
+                <div className="text-2xl font-semibold">
+                  {Object.values(d.openBugsBySeverity ?? {}).reduce((a, b) => a + b, 0)}
+                </div>
+                <ul className="mt-2 grid gap-1 text-xs">
+                  {BUG_SEVERITIES.filter((s) => (d.openBugsBySeverity?.[s] ?? 0) > 0).map((s) => (
+                    <li key={s} className="flex items-center justify-between">
+                      <SeverityBadge severity={s} />
+                      <span className="font-medium tabular-nums">{d.openBugsBySeverity![s]}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </Metric>
           <Metric title="Release readiness" icon={Rocket}>
-            <NotYet phase={6} what="Releases" />
+            <NotYet phase={4} what="Releases" />
           </Metric>
         </div>
 
@@ -305,11 +371,83 @@ export default function ProjectDashboardPage() {
                 </ul>
               )}
             </section>
+            <section aria-labelledby="att-failed">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 id="att-failed" className="text-sm font-medium">
+                  Failed tests in active runs
+                </h3>
+                <Link
+                  href={`${base}/runs`}
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  Test runs <ArrowRight className="size-3" />
+                </Link>
+              </div>
+              {!d ? (
+                <Skeleton className="h-16" />
+              ) : d.attention.failedTests.length === 0 ? (
+                <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                  No failed tests in active runs.
+                </p>
+              ) : (
+                <ul className="divide-y rounded-md border">
+                  {d.attention.failedTests.map((f) => (
+                    <li key={f.resultId}>
+                      <Link
+                        href={`${base}/runs/${f.run.ref}?result=${f.resultId}`}
+                        className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted/50"
+                      >
+                        <ResultGlyph status="FAILED" />
+                        <Ref>{f.ref}</Ref>
+                        <span className="flex-1 truncate">{f.title}</span>
+                        <span className="text-xs text-muted-foreground">{f.run.ref}</span>
+                        {!f.hasBug && (
+                          <span className="rounded-md bg-warning-subtle px-1.5 py-0.5 text-[11px] font-medium text-warning-text">
+                            No bug yet
+                          </span>
+                        )}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            <section aria-labelledby="att-bugs">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 id="att-bugs" className="text-sm font-medium">
+                  Bugs assigned to me
+                </h3>
+                <Link
+                  href={`${base}/bugs`}
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  Bugs <ArrowRight className="size-3" />
+                </Link>
+              </div>
+              {!d ? (
+                <Skeleton className="h-16" />
+              ) : d.attention.myBugs.length === 0 ? (
+                <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                  No open bugs assigned to you.
+                </p>
+              ) : (
+                <ul className="divide-y rounded-md border">
+                  {d.attention.myBugs.map((b) => (
+                    <li key={b.id}>
+                      <Link
+                        href={`${base}/bugs/${b.ref}`}
+                        className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted/50"
+                      >
+                        <Ref>{b.ref}</Ref>
+                        <span className="flex-1 truncate">{b.title}</span>
+                        <SeverityBadge severity={b.severity} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </CardContent>
-          <div className="flex items-center gap-2 border-t px-5 py-3 text-xs text-muted-foreground">
-            <Sparkles className="size-3.5 text-violet-500" /> Failed tests, bugs assigned to you and
-            pending approvals join this list as those modules ship.
-          </div>
         </Card>
       </div>
     </>

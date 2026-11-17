@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { createZodDto } from 'nestjs-zod';
-import { notificationQuerySchema } from '@qaforge/shared';
+import { formatRef, notificationQuerySchema } from '@qaforge/shared';
 import type { Prisma } from '@qaforge/db';
 import { CurrentPrincipal } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
@@ -73,7 +73,55 @@ export class NotificationsService {
       }),
       this.prisma.client.notification.count({ where: { userId, readAt: null } }),
     ]);
-    return { items, unread };
+    return { items: await this.withLinks(items), unread };
+  }
+
+  /** Resolve each notification to an in-app path (/org/p/KEY/bugs/BUG-0001) for the bell. */
+  private async withLinks<
+    T extends {
+      projectId: string | null;
+      entityType: string | null;
+      entityId: string | null;
+      url: string | null;
+    },
+  >(items: T[]) {
+    const db = this.prisma.client;
+    const pids = [...new Set(items.map((i) => i.projectId).filter((x): x is string => !!x))];
+    const ids = (type: string) =>
+      items.filter((i) => i.entityType === type && i.entityId).map((i) => i.entityId!);
+    const [projects, bugs, runs, cases, results] = await Promise.all([
+      db.project.findMany({
+        where: { id: { in: pids } },
+        select: { id: true, key: true, organization: { select: { slug: true } } },
+      }),
+      db.bug.findMany({ where: { id: { in: ids('bug') } }, select: { id: true, seq: true } }),
+      db.testRun.findMany({
+        where: { id: { in: ids('test_run') } },
+        select: { id: true, seq: true },
+      }),
+      db.testCase.findMany({
+        where: { id: { in: ids('test_case') } },
+        select: { id: true, seq: true },
+      }),
+      db.testRunResult.findMany({
+        where: { id: { in: ids('test_run_result') } },
+        select: { id: true, testRun: { select: { seq: true } } },
+      }),
+    ]);
+    const base = new Map(projects.map((p) => [p.id, `/${p.organization.slug}/p/${p.key}`]));
+    const seq = new Map<string, string>([
+      ...bugs.map((b) => [b.id, `bugs/${formatRef('bug', b.seq)}`] as const),
+      ...runs.map((r) => [r.id, `runs/${formatRef('testRun', r.seq)}`] as const),
+      ...cases.map((c) => [c.id, `test-cases/${formatRef('testCase', c.seq)}`] as const),
+      ...results.map(
+        (r) => [r.id, `runs/${formatRef('testRun', r.testRun.seq)}?result=${r.id}`] as const,
+      ),
+    ]);
+    return items.map((i) => {
+      const b = i.projectId ? base.get(i.projectId) : undefined;
+      const rest = i.entityId ? seq.get(i.entityId) : undefined;
+      return { ...i, href: i.url ?? (b && rest ? `${b}/${rest}` : (b ?? null)) };
+    });
   }
 
   async markRead(userId: string, id?: string) {

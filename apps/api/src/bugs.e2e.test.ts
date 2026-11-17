@@ -340,6 +340,25 @@ describe('comments', () => {
       .expect(201);
   });
 
+  it('links notifications to the item and shows card counts on the board', async () => {
+    await qa
+      .agent('post', `${base()}/comments/bug/${bugId}`)
+      .send({ body: doc('Counted on the card'), mentions: [] })
+      .expect(201);
+    const list = (await lead.agent('get', '/v1/notifications')).body;
+    const bugNote = list.items.find((n: { entityType: string }) => n.entityType === 'bug');
+    expect(bugNote.href).toMatch(/^\/org-[^/]+\/p\/BUGS\/bugs\/BUG-\d{4}$/);
+    const board = (await lead.agent('get', `${base()}/bugs/board`).expect(200)).body as {
+      ref: string;
+      commentCount: number;
+      attachmentCount: number;
+      aiConfidence: number | null;
+    }[];
+    expect(board.some((b) => b.commentCount > 0)).toBe(true);
+    expect(board.some((b) => b.attachmentCount > 0)).toBe(true);
+    expect(board[0]).toHaveProperty('aiConfidence');
+  });
+
   it('marks all notifications read', async () => {
     await lead.agent('post', '/v1/notifications/read-all').expect(200);
     expect((await lead.agent('get', '/v1/notifications')).body.unread).toBe(0);

@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useMe } from '@/hooks/queries';
+import { useMarkNotificationsRead, useNotifications } from '@/hooks/bugs';
 import { signOut } from '@/lib/auth-client';
 import { MobileNav } from './mobile-nav';
 import { AgentActivity } from '@/components/ai/agent-activity';
@@ -24,18 +25,73 @@ import { useCurrentProject } from '@/hooks/queries';
 import { useUiState } from './ui-state';
 
 function Notifications() {
+  const router = useRouter();
+  const list = useNotifications();
+  const markRead = useMarkNotificationsRead();
+  const unread = list.data?.unread ?? 0;
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label="Notifications">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="relative"
+          aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}
+        >
           <Bell className="size-4" />
+          {unread > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-white">
+              {unread > 9 ? '9+' : unread}
+            </span>
+          )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80">
-        <p className="text-sm font-medium">Notifications</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          You&apos;re all caught up. Reviews, assignments and approvals will appear here.
-        </p>
+      <PopoverContent align="end" className="w-96 p-0">
+        <div className="flex items-center border-b px-3 py-2">
+          <p className="flex-1 text-sm font-semibold">Notifications</p>
+          {unread > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => markRead.mutate(undefined)}>
+              Mark all read
+            </Button>
+          )}
+        </div>
+        {list.isLoading ? (
+          <div className="p-4 text-sm text-muted-foreground">Loading…</div>
+        ) : !list.data?.items.length ? (
+          <p className="p-4 text-sm text-muted-foreground">
+            You&apos;re all caught up. Assignments, mentions and status changes appear here.
+          </p>
+        ) : (
+          <ul className="max-h-96 overflow-y-auto py-1">
+            {list.data.items.map((n) => (
+              <li key={n.id}>
+                <button
+                  className="flex w-full gap-2.5 px-3 py-2 text-left hover:bg-accent"
+                  onClick={() => {
+                    if (!n.readAt) markRead.mutate(n.id);
+                    if (n.href) router.push(n.href);
+                  }}
+                >
+                  <span
+                    className={`mt-1.5 size-2 shrink-0 rounded-full ${n.readAt ? 'bg-transparent' : 'bg-primary'}`}
+                    aria-label={n.readAt ? undefined : 'Unread'}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className={`block text-sm ${n.readAt ? '' : 'font-semibold'}`}>
+                      {n.title}
+                    </span>
+                    {n.body && (
+                      <span className="block truncate text-xs text-muted-foreground">{n.body}</span>
+                    )}
+                    <time className="text-[11px] text-muted-foreground" dateTime={n.createdAt}>
+                      {new Date(n.createdAt).toLocaleString()}
+                    </time>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </PopoverContent>
     </Popover>
   );

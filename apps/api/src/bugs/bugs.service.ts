@@ -44,6 +44,7 @@ export const bugListSelect = {
   createdById: true,
   rank: true,
   aiGenerated: true,
+  aiNotes: true,
   createdAt: true,
   updatedAt: true,
   _count: { select: { testCases: true } },
@@ -59,6 +60,43 @@ export class BugsService {
 
   private present<T extends { seq: number }>(b: T) {
     return { ...b, ref: formatRef('bug', b.seq) };
+  }
+
+  /** Card metadata for lists and the board: comment/attachment counts and a compact AI summary. */
+  private async withCounts<T extends { id: string; seq: number; aiNotes: Prisma.JsonValue }>(
+    projectId: string,
+    rows: T[],
+  ) {
+    const ids = rows.map((r) => r.id);
+    const [comments, files] = ids.length
+      ? await Promise.all([
+          this.prisma.client.comment.groupBy({
+            by: ['entityId'],
+            where: { projectId, entityType: 'bug', entityId: { in: ids }, deletedAt: null },
+            _count: true,
+          }),
+          this.prisma.client.attachment.groupBy({
+            by: ['entityId'],
+            where: { projectId, entityType: 'bug', entityId: { in: ids } },
+            _count: true,
+          }),
+        ])
+      : [[], []];
+    const c = new Map(comments.map((g) => [g.entityId, g._count]));
+    const f = new Map(files.map((g) => [g.entityId!, g._count]));
+    return rows.map(({ aiNotes, ...r }) => {
+      const notes = (aiNotes ?? {}) as {
+        confidence?: number | null;
+        duplicates?: { ref: string; similarity: number }[];
+      };
+      return {
+        ...this.present(r),
+        commentCount: c.get(r.id) ?? 0,
+        attachmentCount: f.get(r.id) ?? 0,
+        aiConfidence: notes.confidence ?? null,
+        possibleDuplicate: notes.duplicates?.[0] ?? null,
+      };
+    });
   }
 
   where(projectId: string, userId: string, q: Partial<BugQuery>): Prisma.BugWhereInput {
@@ -99,7 +137,12 @@ export class BugsService {
         take: q.pageSize,
       }),
     ]);
-    return { items: rows.map((r) => this.present(r)), total, page: q.page, pageSize: q.pageSize };
+    return {
+      items: await this.withCounts(projectId, rows),
+      total,
+      page: q.page,
+      pageSize: q.pageSize,
+    };
   }
 
   /** Kanban: every status column ordered by rank (closed limited to the most recent). */
@@ -119,7 +162,7 @@ export class BugsService {
         take: 50,
       }),
     ]);
-    return [...open, ...closed].map((r) => this.present(r));
+    return this.withCounts(projectId, [...open, ...closed]);
   }
 
   async get(projectId: string, id: string) {

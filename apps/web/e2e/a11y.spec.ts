@@ -7,6 +7,10 @@ const PAGES = [
   ['test cases', '/acme/p/PAY/test-cases', 'Review queue'],
   ['test case', '/acme/p/PAY/test-cases/TC-0001', 'Preconditions'],
   ['project settings', '/acme/p/PAY/settings', 'Environments'],
+  ['test runs', '/acme/p/PAY/runs', 'Pass rate'],
+  ['run execution', '/acme/p/PAY/runs/RUN-0001', 'Preconditions'],
+  ['bugs board', '/acme/p/PAY/bugs', 'Ready for retest'],
+  ['bug detail', '/acme/p/PAY/bugs/BUG-0001', 'Steps to reproduce'],
   ['members', '/acme/settings/members', 'Olivia Owner'],
 ] as const;
 
@@ -23,7 +27,11 @@ for (const theme of ['light', 'dark'] as const) {
       await page.goto(url);
       await expect(page.getByText(ready).first()).toBeVisible();
       // Toasts from parallel jobs animate in mid-scan; settled toasts are covered by their own test below.
-      await page.addStyleTag({ content: '[data-sonner-toaster]{display:none!important}' });
+      // Colour transitions (e.g. while the theme class is applied) can be sampled mid-animation.
+      await page.addStyleTag({
+        content:
+          '[data-sonner-toaster]{display:none!important} *,*::before,*::after{transition:none!important}',
+      });
       const res = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
         .analyze();

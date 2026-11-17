@@ -74,8 +74,8 @@ export function canTransition(from: TestCaseStatus, to: TestCaseStatus): boolean
 export const PROJECT_MODULES = [
   { key: 'requirements', label: 'Requirements', available: true },
   { key: 'testCases', label: 'Test cases', available: true },
-  { key: 'testRuns', label: 'Test runs', available: false },
-  { key: 'bugs', label: 'Bugs', available: false },
+  { key: 'testRuns', label: 'Test runs', available: true },
+  { key: 'bugs', label: 'Bugs', available: true },
   { key: 'automation', label: 'Automation', available: false },
   { key: 'releases', label: 'Releases', available: false },
   { key: 'reports', label: 'Reports', available: false },

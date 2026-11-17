@@ -19,7 +19,7 @@ export function Avatar({
       {src ? (
         <AvatarPrimitive.Image className="aspect-square size-full" src={src} alt={name} />
       ) : null}
-      <AvatarPrimitive.Fallback className="flex size-full items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
+      <AvatarPrimitive.Fallback className="flex size-full items-center justify-center rounded-full bg-primary-subtle text-[11px] font-semibold text-primary">
         {initials(name)}
       </AvatarPrimitive.Fallback>
     </AvatarPrimitive.Root>

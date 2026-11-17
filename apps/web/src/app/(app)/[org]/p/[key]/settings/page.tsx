@@ -13,6 +13,7 @@ import { Input, Textarea } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shell/page-header';
 import { EnvironmentDialog } from '@/components/projects/environment-dialog';
+import { ProjectMembersCard } from '@/components/projects/project-members';
 import { useCurrentProject, useUpdateProject } from '@/hooks/queries';
 import { useDeleteEnvironment, useEnvironments } from '@/hooks/qa';
 import { useCan } from '@/hooks/use-permission';
@@ -22,6 +23,7 @@ export default function ProjectSettingsPage() {
   const { project, org } = useCurrentProject();
   const router = useRouter();
   const canEdit = useCan('project:update');
+  const canManageMembers = useCan('members:manage');
   const update = useUpdateProject(org?.id ?? '', project?.id ?? '');
   const envs = useEnvironments(project?.id);
   const delEnv = useDeleteEnvironment(project?.id ?? '');
@@ -203,6 +205,8 @@ export default function ProjectSettingsPage() {
             ))}
           </CardContent>
         </Card>
+
+        {canManageMembers && <ProjectMembersCard projectId={project.id} actorRole={org.role} />}
 
         <Card className="border-destructive/30">
           <CardHeader>
