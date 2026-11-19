@@ -174,23 +174,28 @@ model Project {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  counters     ProjectCounter[]
-  auditLogs    AuditLog[]
-  environments Environment[]
-  requirements Requirement[]
-  sources      RequirementSource[]
-  suites       TestSuite[]
-  testCases    TestCase[]
-  sharedSteps  SharedStep[]
-  attachments  Attachment[]
-  savedViews   SavedView[]
-  agentJobs    AgentJob[]
-  members      ProjectMember[]
-  testRuns     TestRun[]
-  bugs         Bug[]
-  comments     Comment[]
-  customFields CustomField[]
-  templates    Template[]
+  counters            ProjectCounter[]
+  auditLogs           AuditLog[]
+  environments        Environment[]
+  requirements        Requirement[]
+  sources             RequirementSource[]
+  suites              TestSuite[]
+  testCases           TestCase[]
+  sharedSteps         SharedStep[]
+  attachments         Attachment[]
+  savedViews          SavedView[]
+  agentJobs           AgentJob[]
+  members             ProjectMember[]
+  testRuns            TestRun[]
+  bugs                Bug[]
+  comments            Comment[]
+  customFields        CustomField[]
+  templates           Template[]
+  apiCollections      ApiCollection[]
+  automationTests     AutomationTest[]
+  automationRuns      AutomationRun[]
+  automationSchedules AutomationSchedule[]
+  tokens              ProjectToken[]
 
   @@unique([organizationId, key])
   @@index([organizationId, archivedAt])
@@ -274,8 +279,10 @@ model Environment {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  testRuns TestRun[]
-  bugs     Bug[]
+  testRuns            TestRun[]
+  bugs                Bug[]
+  automationRuns      AutomationRun[]
+  automationSchedules AutomationSchedule[]
 
   @@unique([projectId, name])
   @@map("environment")
@@ -525,12 +532,14 @@ model TestCase {
   updatedAt        DateTime         @updatedAt
   deletedAt        DateTime?
 
-  steps        TestStep[]
-  versions     TestCaseVersion[]
-  requirements RequirementTestCase[]
-  customFields Json                  @default("{}")
-  runResults   TestRunResult[]
-  bugs         TestCaseBug[]
+  steps           TestStep[]
+  versions        TestCaseVersion[]
+  requirements    RequirementTestCase[]
+  customFields    Json                  @default("{}")
+  runResults      TestRunResult[]
+  bugs            TestCaseBug[]
+  apiRequests     ApiRequest[]
+  automationTests AutomationTest[]
 
   @@unique([projectId, seq])
   @@index([projectId, suiteId])
@@ -758,7 +767,8 @@ model TestRun {
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
 
-  results TestRunResult[]
+  results        TestRunResult[]
+  automationRuns AutomationRun[]
 
   @@unique([projectId, seq])
   @@index([projectId, status])
@@ -768,29 +778,30 @@ model TestRun {
 
 /// One test case inside a run. The case is snapshotted so later edits don't rewrite history.
 model TestRunResult {
-  id                 String       @id @default(uuid()) @db.Uuid
-  testRunId          String       @db.Uuid
-  testRun            TestRun      @relation(fields: [testRunId], references: [id], onDelete: Cascade)
-  testCaseId         String?      @db.Uuid
-  testCase           TestCase?    @relation(fields: [testCaseId], references: [id], onDelete: SetNull)
+  id                 String            @id @default(uuid()) @db.Uuid
+  testRunId          String            @db.Uuid
+  testRun            TestRun           @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+  testCaseId         String?           @db.Uuid
+  testCase           TestCase?         @relation(fields: [testCaseId], references: [id], onDelete: SetNull)
   testCaseVersion    Int
   /// { ref, title, preconditions, steps[{action,expected}], testData }
   snapshot           Json
   /// Parameterised data row this result covers (null = whole case)
   dataRowIndex       Int?
   position           Int
-  status             ResultStatus @default(UNTESTED)
+  status             ResultStatus      @default(UNTESTED)
   /// Per step: [{ index, status, actual, note }]
-  stepResults        Json         @default("[]")
-  notes              String       @default("")
-  assigneeId         String?      @db.Uuid
-  executedById       String?      @db.Uuid
+  stepResults        Json              @default("[]")
+  notes              String            @default("")
+  assigneeId         String?           @db.Uuid
+  executedById       String?           @db.Uuid
   executedAt         DateTime?
   durationSec        Int?
   /// Set when the result came from automation
-  automationResultId String?      @unique @db.Uuid
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  automationResultId String?           @unique @db.Uuid
+  automationResult   AutomationResult? @relation(fields: [automationResultId], references: [id], onDelete: SetNull)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   bugs Bug[]
 
@@ -993,4 +1004,275 @@ model Notification {
 
   @@index([userId, readAt, createdAt])
   @@map("notification")
+}
+
+// ===========================================================================
+// Automation (Phase 3): API testing, Playwright UI tests, runs, schedules, CI
+// ===========================================================================
+
+enum HttpMethod {
+  GET
+  POST
+  PUT
+  PATCH
+  DELETE
+  HEAD
+  OPTIONS
+}
+
+/// Folder tree of API requests. Variables are non-secret; secrets come from the run's Environment.
+model ApiCollection {
+  id           String          @id @default(uuid()) @db.Uuid
+  projectId    String          @db.Uuid
+  project      Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentId     String?         @db.Uuid
+  parent       ApiCollection?  @relation("ApiCollectionTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children     ApiCollection[] @relation("ApiCollectionTree")
+  name         String
+  description  String          @default("")
+  /// Non-secret variables: { name: value }
+  variables    Json            @default("{}")
+  /// Inherited by requests: { type: "none"|"bearer"|"basic"|"apiKey"|"oauth2", ... } (secrets as {{env.SECRET}} refs)
+  auth         Json            @default("{\"type\":\"none\"}")
+  position     Int             @default(0)
+  /// { format: "postman"|"bruno"|"openapi"|"curl", fileName }
+  importedFrom Json?
+  createdById  String          @db.Uuid
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  requests ApiRequest[]
+
+  @@index([projectId, parentId, position])
+  @@map("api_collection")
+}
+
+model ApiRequest {
+  id           String        @id @default(uuid()) @db.Uuid
+  collectionId String        @db.Uuid
+  collection   ApiCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  name         String
+  method       HttpMethod    @default(GET)
+  /// May contain {{variables}}
+  url          String
+  /// [{ name, value, enabled }]
+  headers      Json          @default("[]")
+  query        Json          @default("[]")
+  /// { type: "none"|"json"|"text"|"form"|"graphql", content, variables? }
+  body         Json          @default("{\"type\":\"none\"}")
+  /// null = inherit from the collection
+  auth         Json?
+  /// [{ type: "status"|"header"|"jsonPath"|"jsonSchema"|"responseTime"|"bodyContains", ... }]
+  assertions   Json          @default("[]")
+  /// Chaining: [{ variable, from: "jsonPath"|"header"|"status", path }]
+  extract      Json          @default("[]")
+  position     Int           @default(0)
+  testCaseId   String?       @db.Uuid
+  testCase     TestCase?     @relation(fields: [testCaseId], references: [id], onDelete: SetNull)
+  createdById  String        @db.Uuid
+  updatedById  String        @db.Uuid
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  results AutomationResult[]
+
+  @@index([collectionId, position])
+  @@map("api_request")
+}
+
+enum AutomationTestStatus {
+  ACTIVE
+  QUARANTINED
+  DISABLED
+}
+
+/// A Playwright UI test file (TypeScript), edited in the Monaco editor.
+model AutomationTest {
+  id          String               @id @default(uuid()) @db.Uuid
+  projectId   String               @db.Uuid
+  project     Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  /// Virtual path inside the project's test workspace, e.g. "checkout/declined-card.spec.ts"
+  path        String
+  code        String
+  status      AutomationTestStatus @default(ACTIVE)
+  testCaseId  String?              @db.Uuid
+  testCase    TestCase?            @relation(fields: [testCaseId], references: [id], onDelete: SetNull)
+  tags        String[]             @default([])
+  /// Rolling flakiness 0-1 over recent results (passed only on retry = flaky)
+  flakyScore  Float                @default(0)
+  aiGenerated Boolean              @default(false)
+  aiJobId     String?              @db.Uuid
+  /// Pending AI locator repair awaiting approval: { jobId, code, explanation, resultId }
+  pendingFix  Json?
+  version     Int                  @default(1)
+  createdById String               @db.Uuid
+  updatedById String               @db.Uuid
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  deletedAt   DateTime?
+
+  results  AutomationResult[]
+  versions AutomationTestVersion[]
+
+  @@unique([projectId, path])
+  @@map("automation_test")
+}
+
+model AutomationTestVersion {
+  id               String         @id @default(uuid()) @db.Uuid
+  automationTestId String         @db.Uuid
+  automationTest   AutomationTest @relation(fields: [automationTestId], references: [id], onDelete: Cascade)
+  version          Int
+  code             String
+  /// "edit" | "ai_generate" | "ai_repair"
+  reason           String         @default("edit")
+  createdById      String         @db.Uuid
+  createdAt        DateTime       @default(now())
+
+  @@unique([automationTestId, version])
+  @@map("automation_test_version")
+}
+
+enum AutomationTrigger {
+  MANUAL
+  SCHEDULE
+  CI_WEBHOOK
+  API
+}
+
+enum AutomationRunStatus {
+  QUEUED
+  RUNNING
+  PASSED
+  FAILED
+  ERROR
+  CANCELLED
+}
+
+model AutomationRun {
+  id             String              @id @default(uuid()) @db.Uuid
+  projectId      String              @db.Uuid
+  project        Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Per-project sequence -> AUT-0001
+  seq            Int
+  trigger        AutomationTrigger
+  /// Who/what started it: user id, schedule id, CI pipeline URL
+  triggerRef     String?
+  /// CI retries with the same key return the same run
+  idempotencyKey String?
+  /// { kind: "all"|"tests"|"collections"|"tags", testIds?, collectionIds?, tags? }
+  selection      Json
+  environmentId  String?             @db.Uuid
+  environment    Environment?        @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  build          String?
+  status         AutomationRunStatus @default(QUEUED)
+  /// Failed UI tests are retried this many times; a pass on retry marks the result flaky
+  retries        Int                 @default(1)
+  /// { total, passed, failed, flaky, skipped, durationMs }
+  totals         Json                @default("{}")
+  error          String?
+  /// Results mirrored into a Test Run (source AUTOMATION) for cases linked to a test case
+  testRunId      String?             @db.Uuid
+  testRun        TestRun?            @relation(fields: [testRunId], references: [id], onDelete: SetNull)
+  scheduleId     String?             @db.Uuid
+  schedule       AutomationSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  createdById    String?             @db.Uuid
+  createdAt      DateTime            @default(now())
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  results AutomationResult[]
+
+  @@unique([projectId, seq])
+  @@unique([projectId, idempotencyKey])
+  @@index([projectId, createdAt])
+  @@map("automation_run")
+}
+
+enum FailureClass {
+  PRODUCT_BUG
+  TEST_BUG
+  FLAKY
+  ENVIRONMENT
+}
+
+/// One UI test or API request execution inside an automation run.
+model AutomationResult {
+  id               String          @id @default(uuid()) @db.Uuid
+  automationRunId  String          @db.Uuid
+  automationRun    AutomationRun   @relation(fields: [automationRunId], references: [id], onDelete: Cascade)
+  automationTestId String?         @db.Uuid
+  automationTest   AutomationTest? @relation(fields: [automationTestId], references: [id], onDelete: SetNull)
+  apiRequestId     String?         @db.Uuid
+  apiRequest       ApiRequest?     @relation(fields: [apiRequestId], references: [id], onDelete: SetNull)
+  /// Name at execution time (the test or request may be renamed or deleted later)
+  name             String
+  status           ResultStatus
+  /// Passed only after a retry
+  flaky            Boolean         @default(false)
+  attempts         Int             @default(1)
+  durationMs       Int?
+  error            String?
+  /// Truncated log output; traces, videos and screenshots are Attachments (entityType "automation_result")
+  log              String?
+  /// API: request/response summary with secrets redacted; assertion outcomes
+  exchange         Json?
+  failureClass     FailureClass?
+  /// Failure Analysis Agent: { confidence, reasoning, suggestedFix, jobId }
+  analysis         Json?
+  position         Int             @default(0)
+  createdAt        DateTime        @default(now())
+
+  runResult TestRunResult?
+
+  @@index([automationRunId, position])
+  @@index([automationTestId, createdAt])
+  @@map("automation_result")
+}
+
+model AutomationSchedule {
+  id            String       @id @default(uuid()) @db.Uuid
+  projectId     String       @db.Uuid
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name          String
+  /// 5-field cron
+  cron          String
+  timezone      String       @default("UTC")
+  selection     Json
+  environmentId String?      @db.Uuid
+  environment   Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  enabled       Boolean      @default(true)
+  lastRunAt     DateTime?
+  nextRunAt     DateTime?
+  createdById   String       @db.Uuid
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  runs AutomationRun[]
+
+  @@index([enabled, nextRunAt])
+  @@map("automation_schedule")
+}
+
+/// Project-scoped token for CI webhooks (Phase 5 adds organization API tokens). Only the hash is stored.
+model ProjectToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  projectId   String    @db.Uuid
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  /// First characters, shown in the UI to tell tokens apart ("qaf_ci_ab12…")
+  prefix      String
+  /// SHA-256 of the token
+  tokenHash   String    @unique
+  /// e.g. ["automation:run"]
+  scopes      String[]  @default(["automation:run"])
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdById String    @db.Uuid
+  createdAt   DateTime  @default(now())
+
+  @@index([projectId])
+  @@map("project_token")
 }

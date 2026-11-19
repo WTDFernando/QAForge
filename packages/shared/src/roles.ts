@@ -54,6 +54,10 @@ export const PERMISSIONS = [
   'audit:read',
   'apitoken:manage',
   'webhook:manage',
+  'automation:read',
+  'automation:write',
+  'automation:run',
+  'automation:configure',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -66,6 +70,7 @@ const READ_ALL: Permission[] = [
   'run:read',
   'bug:read',
   'release:read',
+  'automation:read',
 ];
 
 const QA_ENGINEER: Permission[] = [
@@ -78,6 +83,8 @@ const QA_ENGINEER: Permission[] = [
   'bug:write',
   'release:write',
   'ai:use',
+  'automation:write',
+  'automation:run',
 ];
 
 const QA_LEAD: Permission[] = [
@@ -88,6 +95,7 @@ const QA_LEAD: Permission[] = [
   'release:approve',
   'release:sign',
   'audit:read',
+  'automation:configure',
 ];
 
 const ADMIN: Permission[] = [
@@ -105,7 +113,14 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   ADMIN: new Set(ADMIN),
   QA_LEAD: new Set(QA_LEAD),
   QA_ENGINEER: new Set(QA_ENGINEER),
-  DEVELOPER: new Set<Permission>([...READ_ALL, 'bug:write', 'run:execute', 'comment:write']),
+  DEVELOPER: new Set<Permission>([
+    ...READ_ALL,
+    'bug:write',
+    'run:execute',
+    'comment:write',
+    'automation:write',
+    'automation:run',
+  ]),
   VIEWER: new Set(READ_ALL),
   // Client: read-only plus approval of test cases and releases.
   CLIENT: new Set<Permission>([

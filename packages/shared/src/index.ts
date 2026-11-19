@@ -7,3 +7,4 @@ export * from './zod-utils';
 export * from './ai';
 export * from './runs';
 export * from './bugs';
+export * from './automation';

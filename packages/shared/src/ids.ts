@@ -8,6 +8,7 @@ export const ENTITY_PREFIX = {
   testRun: 'RUN',
   bug: 'BUG',
   release: 'REL',
+  automationRun: 'AUT',
 } as const;
 export type EntityKind = keyof typeof ENTITY_PREFIX;
 

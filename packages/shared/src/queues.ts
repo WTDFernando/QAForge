@@ -6,6 +6,8 @@ export const QUEUES = {
   system: 'system',
   /** Malware scan of uploaded files (ClamAV). */
   scan: 'file-scan',
+  /** Automation runs (API requests + Playwright tests) and the schedule tick. */
+  automation: 'automation-runs',
 } as const;
 
 export interface ScanJob {
@@ -22,4 +24,8 @@ export interface JobProgress {
 export interface SystemPingJob {
   kind: 'ping';
   requestedAt: string;
+}
+
+export interface AutomationJob {
+  automationRunId: string;
 }
