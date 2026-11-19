@@ -304,6 +304,8 @@ function CopyBlock({ label, text }: { label: string; text: string }) {
   return (
     <div className="relative min-w-0">
       <pre
+        // Scrolls sideways on narrow screens: keyboard users need to reach it.
+        tabIndex={0}
         aria-label={label}
         className="overflow-x-auto rounded-lg border bg-muted/50 p-3 pr-12 font-mono text-[12px] leading-5"
       >

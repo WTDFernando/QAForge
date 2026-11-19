@@ -330,7 +330,10 @@ function ResultDetail({
       </div>
 
       {row.error && (
-        <pre className="max-h-60 overflow-auto rounded-lg bg-destructive-subtle p-3 font-mono text-xs whitespace-pre-wrap text-destructive-text">
+        <pre
+          tabIndex={0}
+          className="max-h-60 overflow-auto rounded-lg bg-destructive-subtle p-3 font-mono text-xs whitespace-pre-wrap text-destructive-text"
+        >
           {row.error}
         </pre>
       )}
@@ -587,7 +590,10 @@ function Evidence({ projectId, result }: { projectId: string; result: Automation
               <h3 className="text-sm font-semibold">
                 Response · {api.response.status} {api.response.statusText}
               </h3>
-              <pre className="max-h-80 overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-all">
+              <pre
+                tabIndex={0}
+                className="max-h-80 overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-all"
+              >
                 {api.response.body || 'Empty body'}
               </pre>
             </>
@@ -597,7 +603,10 @@ function Evidence({ projectId, result }: { projectId: string; result: Automation
       {result.log && (
         <details className="rounded-lg border">
           <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Log</summary>
-          <pre className="max-h-96 overflow-auto border-t bg-muted/40 p-3 font-mono text-[11.5px] whitespace-pre-wrap">
+          <pre
+            tabIndex={0}
+            className="max-h-96 overflow-auto border-t bg-muted/40 p-3 font-mono text-[11.5px] whitespace-pre-wrap"
+          >
             {result.log}
           </pre>
         </details>

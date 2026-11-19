@@ -749,6 +749,7 @@ export function ResponseView({ result }: { result: ApiExecution }) {
       </div>
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div
+          tabIndex={0}
           className="min-h-48 min-w-0 flex-1 overflow-auto bg-muted/40"
           role="tabpanel"
           aria-label={tab}
