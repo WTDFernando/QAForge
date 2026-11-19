@@ -110,5 +110,10 @@ export async function createPerfFixture(
       { projectId: project.id, kind: 'requirement', value: reqs.length },
     ],
   });
+  // Refresh planner statistics: right after a bulk insert they still describe empty tables, and
+  // the planner can pick slow plans (e.g. scanning all steps per case) until autovacuum catches up.
+  await prisma.$executeRawUnsafe(
+    'ANALYZE test_case, test_step, requirement_test_case, test_suite, requirement',
+  );
   return { projectId: project.id, created: true };
 }
