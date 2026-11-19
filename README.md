@@ -14,8 +14,11 @@ docker compose up -d            # Postgres 16 + pgvector, Redis
 pnpm install
 pnpm build                      # builds shared packages + generates the Prisma client
 pnpm db:deploy && pnpm db:seed  # schema + demo data (runs, bugs, notifications included)
+pnpm --filter @qaforge/runner exec playwright install chromium  # browser for UI test runs
 pnpm dev                        # web :3000, API :4000, worker
 ```
+
+In development UI tests run in a local process sandbox. In production they run in a container per run: build the image with `docker build -f infra/docker/runner.Dockerfile -t qaforge-runner:latest .` (see [packages/runner](packages/runner/README.md)).
 
 Open http://localhost:3000 and sign in with any demo account (password `qaforge-demo-1`):
 

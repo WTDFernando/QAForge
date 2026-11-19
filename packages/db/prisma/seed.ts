@@ -66,6 +66,7 @@ async function main() {
   }
   await seedPaymentsContent(org.id, ownerId);
   await seedRunsAndBugs(org.id);
+  await seedAutomation(org.id);
   console.log(`Seeded org "${org.name}" with ${USERS.length} users. Password: ${PASSWORD}`);
 }
 
@@ -708,6 +709,388 @@ async function seedRunsAndBugs(orgId: string) {
       { projectId: project.id, kind: 'testRun', value: runs.length },
       { projectId: project.id, kind: 'bug', value: bugs.length },
     ],
+    skipDuplicates: true,
+  });
+}
+
+/**
+ * Phase 3 demo: an API collection that runs against the local QAForge API, Playwright tests
+ * against the local web app, one finished run (with an AI analysis and a pending fix to review)
+ * and a paused nightly schedule.
+ */
+async function seedAutomation(orgId: string) {
+  const project = await prisma.project.findFirstOrThrow({
+    where: { organizationId: orgId, key: 'PAY' },
+  });
+  if (await prisma.apiCollection.findFirst({ where: { projectId: project.id } })) return;
+  const lead = await prisma.user.findUniqueOrThrow({ where: { email: 'lead@qaforge.dev' } });
+  const qa = await prisma.user.findUniqueOrThrow({ where: { email: 'qa@qaforge.dev' } });
+
+  // "Local" points at the web app started by `pnpm dev`, so the demo tests really run.
+  await prisma.environment.createMany({
+    data: [
+      {
+        projectId: project.id,
+        name: 'Local',
+        baseUrl: 'http://localhost:3000',
+        position: 2,
+        createdById: lead.id,
+      },
+    ],
+    skipDuplicates: true,
+  });
+  const local = await prisma.environment.findFirstOrThrow({
+    where: { projectId: project.id, name: 'Local' },
+  });
+  const tcPay = await prisma.testCase.findFirst({
+    where: { projectId: project.id, title: { contains: 'new card' } },
+  });
+
+  const api = await prisma.apiCollection.create({
+    data: {
+      projectId: project.id,
+      name: 'QAForge API',
+      description: 'Smoke checks against the API started by pnpm dev.',
+      variables: { api: 'http://localhost:4000' },
+      auth: { type: 'none' },
+      createdById: lead.id,
+    },
+  });
+  const health = await prisma.apiRequest.create({
+    data: {
+      collectionId: api.id,
+      name: 'Health check',
+      method: 'GET',
+      url: '{{api}}/health',
+      headers: [{ name: 'accept', value: 'application/json', enabled: true }],
+      query: [],
+      body: { type: 'none' },
+      assertions: [
+        { type: 'status', op: 'eq', value: '200' },
+        { type: 'jsonPath', path: '$.status', op: 'eq', value: 'ok' },
+        { type: 'jsonPath', path: '$.db', op: 'eq', value: 'up' },
+        { type: 'responseTime', lessThanMs: 2000 },
+      ],
+      extract: [{ variable: 'dbStatus', from: 'jsonPath', path: '$.db' }],
+      position: 0,
+      createdById: lead.id,
+      updatedById: lead.id,
+    },
+  });
+  const unauth = await prisma.apiRequest.create({
+    data: {
+      collectionId: api.id,
+      name: 'Projects need a session',
+      method: 'GET',
+      url: '{{api}}/v1/me',
+      headers: [],
+      query: [],
+      body: { type: 'none' },
+      assertions: [
+        { type: 'status', op: 'eq', value: '401' },
+        { type: 'header', name: 'content-type', op: 'contains', value: 'json' },
+      ],
+      extract: [],
+      position: 1,
+      createdById: lead.id,
+      updatedById: lead.id,
+    },
+  });
+  const folder = await prisma.apiCollection.create({
+    data: {
+      projectId: project.id,
+      parentId: api.id,
+      name: 'OpenAPI',
+      variables: {},
+      auth: { type: 'inherit' },
+      position: 0,
+      createdById: lead.id,
+    },
+  });
+  await prisma.apiRequest.create({
+    data: {
+      collectionId: folder.id,
+      name: 'OpenAPI document',
+      method: 'GET',
+      url: '{{api}}/openapi.json',
+      headers: [],
+      query: [],
+      body: { type: 'none' },
+      assertions: [
+        { type: 'status', op: 'eq', value: '200' },
+        { type: 'jsonPath', path: '$.openapi', op: 'matches', value: '^3\\.' },
+      ],
+      extract: [],
+      position: 0,
+      createdById: lead.id,
+      updatedById: lead.id,
+    },
+  });
+
+  const loginCode = `import { test, expect } from '@playwright/test';
+
+test('sign-in page shows the form', async ({ page }) => {
+  await page.goto('/login');
+  await expect(page.getByLabel('Email')).toBeVisible();
+  await expect(page.getByLabel('Password')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeEnabled();
+});
+
+test('wrong password shows an error', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@qaforge.dev');
+  await page.getByLabel('Password').fill('not-the-password');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+});
+`;
+  const payOld = `import { test, expect } from '@playwright/test';
+
+test('shopper pays with a new card', async ({ page }) => {
+  await page.goto('/checkout');
+  await page.getByLabel('Email').fill('guest@example.com');
+  await page.getByLabel('Card number').fill(process.env.TEST_CARD ?? '4242424242424242');
+  await page.getByRole('button', { name: 'Pay now' }).click();
+  await expect(page.getByText('Order confirmed')).toBeVisible();
+});
+`;
+  const payFix = payOld.replace("{ name: 'Pay now' }", "{ name: 'Place order' }");
+  const draftCode = `import { test, expect, type Page } from '@playwright/test';
+
+class CheckoutPage {
+  constructor(private readonly page: Page) {}
+  async open() {
+    await this.page.goto('/checkout');
+  }
+  async payWith(card: string) {
+    await this.page.getByLabel('Card number').fill(card);
+    await this.page.getByRole('button', { name: 'Place order' }).click();
+  }
+  declineMessage() {
+    return this.page.getByRole('alert');
+  }
+}
+
+test('declined card shows a clear error', async ({ page }) => {
+  const checkout = new CheckoutPage(page);
+  await checkout.open();
+  await checkout.payWith(process.env.DECLINED_CARD ?? '4000000000000002');
+  await expect(checkout.declineMessage()).toContainText('declined');
+});
+`;
+  const mk = async (data: {
+    name: string;
+    path: string;
+    code: string;
+    status: 'ACTIVE' | 'QUARANTINED' | 'DISABLED';
+    tags: string[];
+    testCaseId?: string | null;
+    flakyScore?: number;
+    aiGenerated?: boolean;
+    version?: number;
+  }) => {
+    const t = await prisma.automationTest.create({
+      data: {
+        projectId: project.id,
+        ...data,
+        version: data.version ?? 1,
+        createdById: qa.id,
+        updatedById: qa.id,
+      },
+    });
+    await prisma.automationTestVersion.create({
+      data: {
+        automationTestId: t.id,
+        version: t.version,
+        code: t.code,
+        reason: data.aiGenerated ? 'ai_generate' : 'edit',
+        createdById: qa.id,
+      },
+    });
+    return t;
+  };
+  const login = await mk({
+    name: 'Sign-in page',
+    path: 'auth/sign-in.spec.ts',
+    code: loginCode,
+    status: 'ACTIVE',
+    tags: ['smoke'],
+  });
+  const pay = await mk({
+    name: 'Shopper pays with a new card',
+    path: 'checkout/new-card.spec.ts',
+    code: payOld,
+    status: 'ACTIVE',
+    tags: ['checkout', 'regression'],
+    testCaseId: tcPay?.id ?? null,
+    flakyScore: 0.1,
+  });
+  await mk({
+    name: 'Declined card shows a clear error',
+    path: 'generated/declined-card.spec.ts',
+    code: draftCode,
+    status: 'DISABLED',
+    tags: ['ai-draft', 'checkout'],
+    aiGenerated: true,
+  });
+
+  // One finished run: API checks pass, sign-in passes after a retry, checkout fails.
+  const started = new Date(Date.now() - 2 * 3600_000);
+  const run = await prisma.automationRun.create({
+    data: {
+      projectId: project.id,
+      seq: 1,
+      trigger: 'MANUAL',
+      triggerRef: qa.id,
+      selection: { kind: 'all' },
+      environmentId: local.id,
+      build: '2.14.0',
+      status: 'FAILED',
+      retries: 1,
+      totals: {
+        total: 4,
+        passed: 3,
+        failed: 1,
+        flaky: 1,
+        skipped: 0,
+        quarantined: 0,
+        durationMs: 48_200,
+      },
+      createdById: qa.id,
+      createdAt: started,
+      startedAt: started,
+      finishedAt: new Date(started.getTime() + 48_200),
+    },
+  });
+  const res = (
+    data: Omit<Parameters<typeof prisma.automationResult.create>[0]['data'], 'automationRunId'>,
+  ) =>
+    prisma.automationResult.create({
+      data: { automationRunId: run.id, createdAt: started, ...data } as never,
+    });
+  await res({
+    apiRequestId: health.id,
+    name: 'Health check',
+    status: 'PASSED',
+    durationMs: 38,
+    position: 0,
+    exchange: {
+      request: {
+        method: 'GET',
+        url: 'http://localhost:4000/health',
+        headers: { accept: 'application/json' },
+        body: null,
+      },
+      response: {
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'application/json' },
+        body: '{"status":"ok","db":"up","redis":"up"}',
+        size: 38,
+        truncated: false,
+      },
+      assertions: [
+        {
+          assertion: { type: 'status', op: 'eq', value: '200' },
+          passed: true,
+          actual: '200',
+          message: '',
+        },
+        {
+          assertion: { type: 'jsonPath', path: '$.status', op: 'eq', value: 'ok' },
+          passed: true,
+          actual: 'ok',
+          message: '',
+        },
+      ],
+    },
+  });
+  await res({
+    apiRequestId: unauth.id,
+    name: 'Projects need a session',
+    status: 'PASSED',
+    durationMs: 21,
+    position: 1,
+  });
+  await res({
+    automationTestId: login.id,
+    name: 'auth/sign-in.spec.ts',
+    status: 'PASSED',
+    flaky: true,
+    attempts: 2,
+    durationMs: 9_400,
+    position: 2,
+    exchange: {
+      driver: 'docker',
+      cases: [
+        { title: 'sign-in page shows the form', status: 'expected', durationMs: 2100, error: null },
+        { title: 'wrong password shows an error', status: 'flaky', durationMs: 7300, error: null },
+      ],
+    },
+  });
+  await res({
+    automationTestId: pay.id,
+    name: 'checkout/new-card.spec.ts',
+    status: 'FAILED',
+    attempts: 2,
+    durationMs: 31_900,
+    position: 3,
+    error:
+      "Error: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Pay now' })",
+    log: 'Running 1 test using 1 worker\n  ✘ checkout/new-card.spec.ts:3 shopper pays with a new card (31.9s)\n  retry #1 ✘',
+    exchange: {
+      driver: 'docker',
+      cases: [
+        {
+          title: 'shopper pays with a new card',
+          status: 'unexpected',
+          durationMs: 31_900,
+          error: 'Timeout',
+        },
+      ],
+    },
+    failureClass: 'TEST_BUG',
+    analysis: {
+      confidence: 0.86,
+      reasoning:
+        'The page loaded and the card field was filled, but no button named "Pay now" exists. The snapshot shows a "Place order" button in the same place, so the label changed in the app, not the behaviour.',
+      evidence:
+        "page snapshot: button \"Place order\" [ref=e41]\nerror: waiting for getByRole('button', { name: 'Pay now' })",
+      suggestedAction: 'Update the locator to the new label; no product bug needed.',
+      locatorIssue: true,
+    },
+  });
+  await prisma.automationTest.update({
+    where: { id: pay.id },
+    data: {
+      pendingFix: {
+        jobId: '00000000-0000-4000-8000-000000000000',
+        code: payFix,
+        summary:
+          'The "Pay now" button was renamed to "Place order" (seen in the failure snapshot).',
+        changes: [
+          "getByRole('button', { name: 'Pay now' }) → getByRole('button', { name: 'Place order' })",
+        ],
+        confidence: 0.86,
+        baseVersion: 1,
+      },
+    },
+  });
+  await prisma.automationSchedule.create({
+    data: {
+      projectId: project.id,
+      name: 'Weekday smoke',
+      cron: '0 6 * * 1-5',
+      timezone: 'UTC',
+      selection: { kind: 'tags', tags: ['smoke'] },
+      environmentId: local.id,
+      // Paused so a fresh install doesn't start runs on its own.
+      enabled: false,
+      createdById: lead.id,
+    },
+  });
+  await prisma.projectCounter.createMany({
+    data: [{ projectId: project.id, kind: 'automationRun', value: 1 }],
     skipDuplicates: true,
   });
 }

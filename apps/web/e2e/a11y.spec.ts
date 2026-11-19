@@ -12,10 +12,16 @@ const PAGES = [
   ['bugs board', '/acme/p/PAY/bugs', 'Ready for retest'],
   ['bug detail', '/acme/p/PAY/bugs/BUG-0001', 'Steps to reproduce'],
   ['members', '/acme/settings/members', 'Olivia Owner'],
+  ['api client', '/acme/p/PAY/automation', 'Health check'],
+  ['ui tests', '/acme/p/PAY/automation/tests', 'auth/sign-in.spec.ts'],
+  ['automation runs', '/acme/p/PAY/automation/runs', 'Flaky results'],
+  ['automation run', '/acme/p/PAY/automation/runs/AUT-0001', 'Failure analysis'],
+  ['schedules & ci', '/acme/p/PAY/automation/ci', 'Weekday smoke'],
 ] as const;
 
 for (const theme of ['light', 'dark'] as const) {
   test(`WCAG 2.2 AA: no serious violations (${theme})`, async ({ page }) => {
+    test.setTimeout(120_000);
     await page.emulateMedia({ colorScheme: theme });
     await page.goto('/login');
     await page.getByLabel('Email').fill('lead@qaforge.dev');

@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     "coverage/**",
     "test-results/**",
     "playwright-report/**",
+    // Prebuilt Monaco copied from node_modules by scripts/copy-monaco.mjs
+    "public/monaco/**",
   ]),
 ]);
 

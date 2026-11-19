@@ -1,6 +1,6 @@
 'use client';
 import { Loader2, Sparkles, X } from 'lucide-react';
-import type { AgentJobEvent, StartAgentJobInput } from '@qaforge/shared';
+import type { AgentId, AgentJobEvent, StartAgentJobInput } from '@qaforge/shared';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useAiSettings, useCancelAgentJob, useStartAgentJob } from '@/hooks/ai';
@@ -8,9 +8,7 @@ import { useCurrentOrg } from '@/hooks/queries';
 import { useCan } from '@/hooks/use-permission';
 
 /** Is AI usable here, and if not, why (for tooltips/empty states)? */
-export function useAiAvailability(
-  agent: 'requirement' | 'test-case-writer' | 'test-case-reviewer' | 'copilot',
-) {
+export function useAiAvailability(agent: AgentId) {
   const { org } = useCurrentOrg();
   const settings = useAiSettings(org?.id);
   const canUse = useCan('ai:use');
@@ -44,7 +42,7 @@ export function AiJobButton({
   input: StartAgentJobInput;
   job?: AgentJobEvent;
   label: string;
-  agent: 'requirement' | 'test-case-writer' | 'test-case-reviewer';
+  agent: AgentId;
   size?: 'sm' | 'default';
   variant?: 'outline' | 'default';
 }) {

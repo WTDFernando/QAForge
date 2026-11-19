@@ -129,8 +129,16 @@ export async function runUiTests(
       : !report
         ? `Playwright did not produce a report (exit code ${exec.exitCode}). ${exec.output.slice(-2000)}`
         : globalError;
+    // page.goto('/path') needs a base URL; say so instead of Playwright's "invalid URL".
+    const hint = (o: UiTestOutcome & { id: string }) =>
+      !opts.baseURL && o.error?.includes('Cannot navigate to invalid URL')
+        ? {
+            ...o,
+            error: `${o.error}\n\nNo base URL: run with an environment that has a base URL, or use absolute URLs.`,
+          }
+        : o;
     return {
-      outcomes: all.map((t) => outcomeFor(t, byPath, error)),
+      outcomes: all.map((t) => hint(outcomeFor(t, byPath, error))),
       driver: driver.name,
       timedOut: exec.timedOut,
       error: error?.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 8000) ?? null,

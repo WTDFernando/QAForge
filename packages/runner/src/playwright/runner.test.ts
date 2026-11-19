@@ -89,6 +89,25 @@ describe('Playwright runner (process sandbox)', () => {
     }
   }, 120_000);
 
+  it('explains a relative goto without a base URL', async () => {
+    const res = await runUiTests(
+      [
+        {
+          id: 'rel',
+          path: 'rel.spec.ts',
+          code: `import { test } from '@playwright/test';\ntest('opens', async ({ page }) => { await page.goto('/login'); });`,
+        },
+      ],
+      { retries: 0, timeoutMs: 60_000, driver: new ProcessDriver() },
+    );
+    try {
+      expect(res.outcomes[0]!.status).toBe('FAILED');
+      expect(res.outcomes[0]!.error).toContain('No base URL');
+    } finally {
+      await res.cleanup();
+    }
+  }, 60_000);
+
   it('stops a run that exceeds its time limit', async () => {
     const res = await runUiTests(
       [
