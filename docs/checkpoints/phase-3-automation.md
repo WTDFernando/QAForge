@@ -1,6 +1,6 @@
 # Checkpoint: Phase 3 — Automation
 
-Date: 2026-11-19 · Branch: `main`
+Date: 2026-11-19 · Branch: `main` · CI: green
 
 ## What was built
 
@@ -51,7 +51,7 @@ Install Chromium for the runner once with `pnpm --filter @qaforge/runner exec pl
 | Accessibility (axe, WCAG 2.2 AA) | No serious or critical violations on 15 pages (5 new automation pages), light and dark                                                                                            |
 | Build / typecheck / lint         | Pass (2 older lint warnings)                                                                                                                                                      |
 
-The new E2E and axe specs were run locally against the dev stack; the full E2E suite runs in CI on a fresh seed.
+CI on a fresh seed: 37 of 37 E2E tests pass (all 7 new automation tests included), plus build, typecheck, lint and unit tests.
 
 ## Known limitations
 
