@@ -30,7 +30,7 @@ export async function runAgent<I extends z.ZodType, O extends z.ZodType>(
   const input = agent.input.parse(rawInput) as z.infer<I>;
   const result = await ctx.provider.generateStructured({
     model: ctx.model,
-    system: loadPrompt(agent.id, agent.promptVersion),
+    system: loadPrompt(agent.prompt ?? agent.id, agent.promptVersion),
     content: agent
       .buildContent(input)
       .map((p) => (p.type === 'text' ? { ...p, text: redactText(p.text, ctx.secrets) } : p)),

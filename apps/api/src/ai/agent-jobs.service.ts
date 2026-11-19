@@ -31,6 +31,9 @@ const KIND_PERMISSION = {
   'generate-test-cases': 'testcase:write',
   'review-test-case': 'testcase:read',
   'draft-bug': 'bug:write',
+  'generate-ui-test': 'automation:write',
+  'repair-ui-test': 'automation:write',
+  'analyze-failure': 'automation:run',
 } as const;
 
 const SOURCE_TYPE = {
@@ -39,6 +42,9 @@ const SOURCE_TYPE = {
   'generate-test-cases': 'requirement',
   'review-test-case': 'test_case',
   'draft-bug': 'attachment',
+  'generate-ui-test': 'test_case',
+  'repair-ui-test': 'automation_result',
+  'analyze-failure': 'automation_result',
 } as const;
 
 const SCREENSHOT_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -194,6 +200,31 @@ export class AgentJobsService implements OnModuleDestroy {
         if (a.scanStatus === 'INFECTED')
           throw new BadRequestException('This file failed the malware scan');
         return [a.id];
+      }
+      case 'generate-ui-test': {
+        const t = await db.testCase.findFirst({
+          where: { id: input.testCaseId, projectId, deletedAt: null },
+        });
+        if (!t) throw new NotFoundException('Test case not found');
+        if (
+          input.environmentId &&
+          !(await db.environment.findFirst({ where: { id: input.environmentId, projectId } }))
+        )
+          throw new NotFoundException('Environment not found');
+        return [t.id];
+      }
+      case 'repair-ui-test':
+      case 'analyze-failure': {
+        const r = await db.automationResult.findFirst({
+          where: { id: input.automationResultId, automationRun: { projectId } },
+          select: { id: true, status: true, automationTestId: true },
+        });
+        if (!r) throw new NotFoundException('Result not found');
+        if (r.status !== 'FAILED')
+          throw new BadRequestException('Only failed results can be analysed or repaired');
+        if (input.kind === 'repair-ui-test' && !r.automationTestId)
+          throw new BadRequestException('Only Playwright tests can be repaired');
+        return [r.id];
       }
     }
   }

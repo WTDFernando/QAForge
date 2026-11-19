@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { bugAgent, requirementAgent, testCaseReviewerAgent, testCaseWriterAgent } from '../index';
-import { bugCases, requirementCases, reviewerCases, writerCases } from './cases';
+import {
+  automationRepairAgent,
+  automationWriterAgent,
+  bugAgent,
+  failureAnalysisAgent,
+  requirementAgent,
+  testCaseReviewerAgent,
+  testCaseWriterAgent,
+} from '../index';
+import {
+  automationRepairCases,
+  automationWriterCases,
+  bugCases,
+  failureAnalysisCases,
+  requirementCases,
+  reviewerCases,
+  writerCases,
+} from './cases';
 
 describe('eval cases', () => {
   it('all eval inputs are valid agent inputs', () => {
@@ -14,6 +30,15 @@ describe('eval cases', () => {
       expect(() => testCaseReviewerAgent.input.parse(c.input)).not.toThrow(),
     );
     bugCases.forEach((c) => expect(() => bugAgent.input.parse(c.input)).not.toThrow());
+    automationWriterCases.forEach((c) =>
+      expect(() => automationWriterAgent.input.parse(c.input)).not.toThrow(),
+    );
+    automationRepairCases.forEach((c) =>
+      expect(() => automationRepairAgent.input.parse(c.input)).not.toThrow(),
+    );
+    failureAnalysisCases.forEach((c) =>
+      expect(() => failureAnalysisAgent.input.parse(c.input)).not.toThrow(),
+    );
   });
 
   it('bug checks catch invented detail and injected titles', () => {

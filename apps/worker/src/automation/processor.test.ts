@@ -291,3 +291,119 @@ describe('automation runs', () => {
     expect(await scheduleTick(async () => undefined)).toEqual([]);
   });
 });
+
+describe('automation agents (offline provider)', () => {
+  const redis = { publish: async () => 1 } as never;
+  const bull = (jobId: string) =>
+    ({ data: { jobId }, attemptsMade: 0, opts: { attempts: 1 } }) as never;
+  const startJob = (kind: string, input: object, agent: string) =>
+    prisma.agentJob.create({
+      data: {
+        organizationId: orgId,
+        projectId,
+        agent,
+        input: { kind, ...input },
+        sourceIds: [],
+        createdById: userId,
+      },
+    });
+
+  it('repairs a broken locator from the failure snapshot (pending approval) and analyses the failure', async () => {
+    const { createAiProcessor } = await import('../ai/processor');
+    const process_ = createAiProcessor(redis);
+    const t = await prisma.automationTest.create({
+      data: {
+        projectId,
+        name: 'Pay now',
+        path: 'pay-now.spec.ts',
+        createdById: userId,
+        updatedById: userId,
+        code: `import { test, expect } from '@playwright/test';\ntest('pay', async ({ page }) => {\n  await page.goto('/');\n  await page.getByRole('button', { name: 'Pay now' }).click({ timeout: 500 });\n  await expect(page.getByRole('heading', { name: 'Checkout' })).toBeVisible();\n});`,
+      },
+    });
+    const run = await prisma.$transaction((tx) =>
+      insertAutomationRun(tx, {
+        projectId,
+        trigger: 'MANUAL',
+        selection: { kind: 'tests', testIds: [t.id] },
+        environmentId: envId,
+        retries: 0,
+        createdById: userId,
+      }),
+    );
+    await executeAutomationRun(run.id, { driver: new ProcessDriver(), allowPrivate: true });
+    const result = await prisma.automationResult.findFirstOrThrow({
+      where: { automationRunId: run.id },
+    });
+    expect(result.status).toBe('FAILED');
+
+    const repair = await startJob(
+      'repair-ui-test',
+      { automationResultId: result.id },
+      'automation',
+    );
+    await process_(bull(repair.id));
+    const fixed = await prisma.automationTest.findUniqueOrThrow({ where: { id: t.id } });
+    const fix = fixed.pendingFix as { code: string; summary: string };
+    expect(fix.summary).toBe('The button is now called "Pay".');
+    expect(fix.code).toContain("{ name: 'Pay' }");
+    expect(fixed.code).toContain("'Pay now'"); // unchanged until a person approves
+
+    const analysis = await startJob(
+      'analyze-failure',
+      { automationResultId: result.id },
+      'failure-analysis',
+    );
+    await process_(bull(analysis.id));
+    const analysed = await prisma.automationResult.findUniqueOrThrow({ where: { id: result.id } });
+    expect(analysed.failureClass).toBe('TEST_BUG');
+    expect(analysed.analysis).toMatchObject({ locatorIssue: true });
+  }, 120_000);
+
+  it('drafts a disabled Playwright test from a test case', async () => {
+    const { createAiProcessor } = await import('../ai/processor');
+    const job = await startJob(
+      'generate-ui-test',
+      { testCaseId: caseA, environmentId: envId },
+      'automation',
+    );
+    await createAiProcessor(redis)(bull(job.id));
+    const done = await prisma.agentJob.findUniqueOrThrow({ where: { id: job.id } });
+    expect(done.status).toBe('SUCCEEDED');
+    const t = await prisma.automationTest.findFirstOrThrow({ where: { aiJobId: job.id } });
+    expect(t).toMatchObject({
+      status: 'DISABLED',
+      aiGenerated: true,
+      testCaseId: caseA,
+      tags: ['ai-draft'],
+    });
+    expect(t.path).toMatch(/^generated\/tc-0001-checkout-page-shows-pay\.spec\.ts$/);
+    expect(t.code).toContain('class AppPage');
+    // A second draft for the same case gets its own file.
+    const again = await startJob('generate-ui-test', { testCaseId: caseA }, 'automation');
+    await createAiProcessor(redis)(bull(again.id));
+    expect(
+      (await prisma.automationTest.findFirstOrThrow({ where: { aiJobId: again.id } })).path,
+    ).toMatch(/-2\.spec\.ts$/);
+  });
+
+  it('queues failure analysis after a failed run only when AI is on', async () => {
+    const { queueFailureAnalysis } = await import('./auto-analysis');
+    const run = await prisma.automationRun.findFirstOrThrow({
+      where: { projectId, status: 'FAILED', seq: 1 },
+    });
+    const added: string[] = [];
+    const queue = {
+      add: async (_n: string, d: { jobId: string }) => void added.push(d.jobId),
+    } as never;
+    await prisma.organization.update({
+      where: { id: orgId },
+      data: { settings: { ai: { enabled: false } } },
+    });
+    expect(await queueFailureAnalysis(run, queue)).toEqual([]);
+    await prisma.organization.update({ where: { id: orgId }, data: { settings: {} } });
+    const ids = await queueFailureAnalysis(run, queue);
+    expect(ids.length).toBe(3);
+    expect(added).toEqual(ids);
+  });
+});

@@ -1,4 +1,10 @@
 import type {
+  AutomationRepairInput,
+  AutomationRepairOutput,
+  AutomationWriterInput,
+  AutomationWriterOutput,
+  FailureAnalysisInput,
+  FailureAnalysisOutput,
   BugAgentInput,
   BugAgentOutput,
   RequirementAgentInput,
@@ -284,6 +290,146 @@ export const bugCases: EvalCase<BugAgentInput, BugAgentOutput>[] = [
         /search|shoes|result/i.test(o.title),
         `title should describe the search problem: ${o.title}`,
       ),
+    ],
+  },
+];
+
+export const automationWriterCases: EvalCase<AutomationWriterInput, AutomationWriterOutput>[] = [
+  {
+    name: 'writes a page-object test with accessible locators and secrets from env',
+    input: {
+      projectName: 'Shop',
+      baseUrl: 'https://shop.test',
+      envVarNames: ['SHOP_USER', 'SHOP_PASSWORD'],
+      pageSnapshot: null,
+      testCase: {
+        ref: 'TC-0012',
+        title: 'Shopper signs in and sees their orders',
+        preconditions: 'A shopper account exists (user: ada@shop.test).',
+        steps: [
+          { action: 'Open the sign-in page', expected: 'The "Sign in" form is shown' },
+          {
+            action: 'Enter the email and password and select Sign in',
+            expected: 'The account page shows "My orders"',
+          },
+        ],
+        testData: null,
+      },
+    },
+    checks: (o) => [
+      ...expect(/class \w+Page/.test(o.code), 'should define a page object class'),
+      ...expect(/getBy(Role|Label)\(/.test(o.code), 'should use role or label locators'),
+      ...expect(
+        !/\.locator\(['"]\.|xpath=|nth-child/i.test(o.code),
+        'should not use CSS classes, XPath or nth-child',
+      ),
+      ...expect(
+        /process\.env\.SHOP_PASSWORD/.test(o.code),
+        'should read the password from process.env',
+      ),
+      ...expect(
+        (o.code.match(/test\.step\(/g) ?? []).length >= 2,
+        'should have a test.step per manual step',
+      ),
+      ...expect(/My orders/.test(o.code), 'should assert the expected text'),
+    ],
+  },
+];
+
+const repairCode = `import { test, expect } from '@playwright/test';
+test('checkout', async ({ page }) => {
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: 'Pay now' }).click();
+  await expect(page.getByRole('heading', { name: 'Thank you' })).toBeVisible();
+});`;
+
+export const automationRepairCases: EvalCase<AutomationRepairInput, AutomationRepairOutput>[] = [
+  {
+    name: 'fixes a renamed button using the snapshot',
+    input: {
+      path: 'checkout.spec.ts',
+      code: repairCode,
+      error:
+        "Error: locator.click: Timeout 15000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Pay now' })",
+      pageSnapshot:
+        '- heading "Payment" [level=1]\n- textbox "Card number"\n- button "Pay $120.00"',
+    },
+    checks: (o) => [
+      ...expect(o.isTestProblem, 'should see a test problem'),
+      ...expect(o.fixedCode.includes("'Pay $120.00'"), 'should use the name from the snapshot'),
+      ...expect(o.fixedCode.includes("name: 'Thank you'"), 'should keep the assertion unchanged'),
+    ],
+  },
+  {
+    name: 'does not "fix" a product bug',
+    input: {
+      path: 'checkout.spec.ts',
+      code: repairCode,
+      error:
+        "Error: expect(locator).toBeVisible() failed\nLocator: getByRole('heading', { name: 'Thank you' })",
+      pageSnapshot:
+        '- heading "Payment failed" [level=1]\n- alert: "Card declined: insufficient funds"\n- button "Try again"',
+    },
+    checks: (o) => [
+      ...expect(!o.isTestProblem, 'should report a product problem, not change the test'),
+      ...expect(o.fixedCode.trim() === repairCode.trim(), 'code should be unchanged'),
+    ],
+  },
+];
+
+export const failureAnalysisCases: EvalCase<FailureAnalysisInput, FailureAnalysisOutput>[] = [
+  {
+    name: 'connection refused is an environment problem',
+    input: {
+      kind: 'api',
+      name: 'List orders',
+      error: 'connect ECONNREFUSED 10.0.3.7:443',
+      log: '',
+      exchange: '',
+      flaky: false,
+      attempts: 1,
+      history: ['PASSED', 'PASSED'],
+      code: '',
+    },
+    checks: (o) => [
+      ...expect(o.failureClass === 'ENVIRONMENT', `expected ENVIRONMENT, got ${o.failureClass}`),
+    ],
+  },
+  {
+    name: 'a 500 with an application stack trace is a product bug',
+    input: {
+      kind: 'api',
+      name: 'Create order',
+      error: 'Status 500, expected eq 201',
+      exchange:
+        '{"response":{"status":500,"body":"TypeError: Cannot read properties of undefined (reading \'price\') at OrderService.total (order.service.ts:88)"}}',
+      log: '',
+      flaky: false,
+      attempts: 1,
+      history: ['PASSED', 'PASSED', 'PASSED'],
+      code: '',
+    },
+    checks: (o) => [
+      ...expect(o.failureClass === 'PRODUCT_BUG', `expected PRODUCT_BUG, got ${o.failureClass}`),
+      ...expect(!o.locatorIssue, 'not a locator issue'),
+    ],
+  },
+  {
+    name: 'a locator that no longer matches is a test bug',
+    input: {
+      kind: 'ui',
+      name: 'checkout.spec.ts',
+      error: "locator.click: Timeout 15000ms exceeded.\n  - waiting for getByTestId('pay-btn')",
+      log: '',
+      exchange: '',
+      flaky: false,
+      attempts: 2,
+      history: ['FAILED', 'PASSED'],
+      code: "await page.getByTestId('pay-btn').click();",
+    },
+    checks: (o) => [
+      ...expect(o.failureClass === 'TEST_BUG', `expected TEST_BUG, got ${o.failureClass}`),
+      ...expect(o.locatorIssue, 'should flag a locator issue'),
     ],
   },
 ];

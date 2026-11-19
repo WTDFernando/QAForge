@@ -8,8 +8,10 @@ export interface AgentDefinition<I extends z.ZodType, O extends z.ZodType> {
   id: AgentId;
   name: string;
   description: string;
-  /** Prompt file: prompts/<id>.<promptVersion>.md */
+  /** Prompt file: prompts/<prompt ?? id>.<promptVersion>.md */
   promptVersion: string;
+  /** When one agent has several prompts (e.g. automation-repair). */
+  prompt?: string;
   effort: Effort;
   input: I;
   output: O;

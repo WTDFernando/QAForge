@@ -1,12 +1,13 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { QUEUES, type AutomationJob } from '@qaforge/shared';
+import { QUEUES, type AiJobPayload, type AutomationJob } from '@qaforge/shared';
 import { logger } from './logger';
 import { processSystemJob } from './processors';
 import { createAiProcessor } from './ai/processor';
 import { scanningEnabled } from '@qaforge/db';
 import { createScanProcessor } from './scan';
 import { createAutomationProcessor } from './automation/processor';
+import { queueFailureAnalysis } from './automation/auto-analysis';
 
 const connection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
@@ -24,6 +25,8 @@ void automationQueue
   )
   .catch((err) => logger.error({ err }, 'could not register the schedule tick'));
 
+const aiQueue = new Queue<AiJobPayload>(QUEUES.ai, { connection });
+
 const workers = [
   new Worker(QUEUES.system, processSystemJob, { connection, concurrency: 4 }),
   // AI calls are I/O bound; a few in parallel per worker process.
@@ -32,11 +35,20 @@ const workers = [
     concurrency: Number(process.env.AI_CONCURRENCY ?? 4),
   }),
   // Browser runs are CPU heavy: few at a time per worker process.
-  new Worker(QUEUES.automation, createAutomationProcessor(automationQueue), {
-    connection,
-    concurrency: Number(process.env.AUTOMATION_CONCURRENCY ?? 2),
-    lockDuration: 120_000,
-  }),
+  new Worker(
+    QUEUES.automation,
+    createAutomationProcessor(automationQueue, {
+      onFinished: (run) =>
+        void queueFailureAnalysis(run, aiQueue).catch((err) =>
+          logger.error({ err, runId: run.id }, 'could not queue failure analysis'),
+        ),
+    }),
+    {
+      connection,
+      concurrency: Number(process.env.AUTOMATION_CONCURRENCY ?? 2),
+      lockDuration: 120_000,
+    },
+  ),
   // Malware scanning only runs when ClamAV is configured (compose profile "scan").
   ...(scanningEnabled()
     ? [new Worker(QUEUES.scan, createScanProcessor(), { connection, concurrency: 2 })]
@@ -53,6 +65,7 @@ async function shutdown(signal: string) {
   logger.info({ signal }, 'shutting down');
   await Promise.all(workers.map((w) => w.close()));
   await automationQueue.close();
+  await aiQueue.close();
   await connection.quit();
   await publisher.quit();
   process.exit(0);

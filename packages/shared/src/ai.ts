@@ -5,6 +5,8 @@ export const AGENT_IDS = [
   'test-case-writer',
   'test-case-reviewer',
   'bug',
+  'automation',
+  'failure-analysis',
   'copilot',
 ] as const;
 export type AgentId = (typeof AGENT_IDS)[number];
@@ -27,6 +29,16 @@ export const AGENT_INFO: Record<AgentId, { name: string; description: string }> 
     name: 'Bug Agent',
     description:
       'Turns a screenshot and a one-line note into a bug report draft, highlights the problem and checks for duplicates.',
+  },
+  automation: {
+    name: 'Automation Agent',
+    description:
+      'Turns a manual test case into a Playwright test with a page object, and suggests locator fixes when tests break. You approve every change.',
+  },
+  'failure-analysis': {
+    name: 'Failure Analysis Agent',
+    description:
+      'Explains why automated tests failed: product bug, test bug, flaky test or environment, with the evidence.',
   },
   copilot: {
     name: 'QA Copilot',
@@ -92,6 +104,16 @@ export const startAgentJobSchema = z.discriminatedUnion('kind', [
     userAgent: z.string().max(500).optional(),
     environmentId: z.uuid().optional(),
   }),
+  /** Automation Agent: manual test case -> Playwright test (created disabled until a person enables it). */
+  z.object({
+    kind: z.literal('generate-ui-test'),
+    testCaseId: z.uuid(),
+    environmentId: z.uuid().optional(),
+  }),
+  /** Automation Agent: suggest a locator fix for a failed UI test (applied only after approval). */
+  z.object({ kind: z.literal('repair-ui-test'), automationResultId: z.uuid() }),
+  /** Failure Analysis Agent: classify one failed automation result. */
+  z.object({ kind: z.literal('analyze-failure'), automationResultId: z.uuid() }),
 ]);
 export type StartAgentJobInput = z.infer<typeof startAgentJobSchema>;
 
@@ -101,6 +123,9 @@ export const AGENT_FOR_KIND: Record<StartAgentJobInput['kind'], AgentId> = {
   'generate-test-cases': 'test-case-writer',
   'review-test-case': 'test-case-reviewer',
   'draft-bug': 'bug',
+  'generate-ui-test': 'automation',
+  'repair-ui-test': 'automation',
+  'analyze-failure': 'failure-analysis',
 };
 
 export type AgentJobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';

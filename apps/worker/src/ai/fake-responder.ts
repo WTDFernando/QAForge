@@ -86,6 +86,83 @@ export function fakeResponder(req: StructuredRequest<z.ZodType>): unknown {
       coverageNotes: 'Fake writer output.',
     };
   }
+  if (req.system.includes('repairing a Playwright test')) {
+    const code =
+      /<test_file[^>]*>\n([\s\S]*?)\n<\/test_file>/.exec(text)?.[1]?.replace(/^ *\d+\| /gm, '') ??
+      '';
+    const snapshot = /<page_snapshot>\n([\s\S]*?)\n<\/page_snapshot>/.exec(text)?.[1] ?? '';
+    const broken = /getBy(Role|Label|Text)\((?:'[^']*', )?\{? ?(?:name: )?'([^']+)'/.exec(
+      /<error>\n([\s\S]*?)\n<\/error>/.exec(text)?.[1] ?? '',
+    );
+    const kind = broken?.[1] === 'Role' ? 'button' : null;
+    const found = kind ? new RegExp(`- ${kind} "([^"]+)"`).exec(snapshot)?.[1] : null;
+    if (!broken || !found)
+      return {
+        isTestProblem: false,
+        summary: 'Fake repair: no locator to fix.',
+        fixedCode: code,
+        changes: [],
+        confidence: 0.3,
+      };
+    const lineNo = code.split('\n').findIndex((l) => l.includes(broken[2]!)) + 1;
+    return {
+      isTestProblem: true,
+      summary: `The ${kind} is now called "${found}".`,
+      fixedCode: code.split(`'${broken[2]}'`).join(`'${found}'`),
+      changes: [
+        { line: lineNo, before: broken[2]!, after: found, evidence: `- ${kind} "${found}"` },
+      ],
+      confidence: 0.86,
+    };
+  }
+  if (req.system.includes('Automation Agent')) {
+    const title = /Title: (.*)/.exec(text)?.[1] ?? 'Generated test';
+    const steps = [...text.matchAll(/^\d+\. (.*)\n {3}Expected: (.*)$/gm)].map((m) => ({
+      action: m[1]!,
+      expected: m[2]!,
+    }));
+    const esc = (x: string) => x.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const body = steps
+      .map(
+        (st) =>
+          `  await test.step('${esc(st.action)}', async () => {\n    // TODO(verify): locator guessed from the step text\n    await expect(app.page.getByText('${esc(st.expected.slice(0, 40))}')).toBeVisible();\n  });`,
+      )
+      .join('\n');
+    return {
+      fileName: 'generated.spec.ts',
+      code: `import { test, expect, type Page } from '@playwright/test';\n\nclass AppPage {\n  constructor(readonly page: Page) {}\n  async open() {\n    await this.page.goto('/');\n  }\n}\n\ntest('${esc(title)}', async ({ page }) => {\n  const app = new AppPage(page);\n  await app.open();\n${body}\n});\n`,
+      envVars: [],
+      assumptions: ['Fake Automation Agent output: locators are guessed from the step text.'],
+      confidence: 0.55,
+    };
+  }
+  if (req.system.includes('Failure Analysis Agent')) {
+    const error = /Error:\n([\s\S]*?)\n\nLog/.exec(text)?.[1] ?? '';
+    const first = error.split('\n').find((l) => l.trim()) ?? '';
+    const retry = /passed_on_retry="true"/.test(text);
+    const cls = retry
+      ? 'FLAKY'
+      : /ECONNREFUSED|ENOTFOUND|Blocked request|Timed out|Status 50[234]/i.test(error)
+        ? 'ENVIRONMENT'
+        : /waiting for (getBy|locator)|SyntaxError|Syntax error/i.test(error)
+          ? 'TEST_BUG'
+          : 'PRODUCT_BUG';
+    return {
+      failureClass: cls,
+      confidence: cls === 'PRODUCT_BUG' ? 0.6 : 0.8,
+      reasoning: `Fake analysis based on the error text (${cls}).`,
+      evidence: first.trim().slice(0, 200),
+      suggestedAction:
+        cls === 'ENVIRONMENT'
+          ? 'Check that the environment is up, then rerun.'
+          : cls === 'TEST_BUG'
+            ? 'Update the test (try "Suggest a fix").'
+            : cls === 'FLAKY'
+              ? 'Rerun; quarantine the test if it keeps flaking.'
+              : 'Report a bug to the developers.',
+      locatorIssue: /waiting for (getBy|locator)/.test(error),
+    };
+  }
   if (req.system.includes('Bug Agent')) {
     const note = /<note>\n([\s\S]*?)\n<\/note>/.exec(text)?.[1]?.trim() ?? 'Something went wrong';
     const url = /Page URL: (.*)/.exec(text)?.[1];

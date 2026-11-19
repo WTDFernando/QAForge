@@ -5,7 +5,10 @@ import {
   type StartAgentJobInput,
 } from '@qaforge/shared';
 import {
+  automationRepairAgent,
+  automationWriterAgent,
   bugAgent,
+  failureAnalysisAgent,
   parseUserAgent,
   requirementAgent,
   runAgent,
@@ -15,7 +18,8 @@ import {
   type ProgressUpdate,
   type RequirementAgentOutput,
 } from '@qaforge/ai';
-import { nextSeq, Prisma, type AgentJob } from '@qaforge/db';
+import { createStorage, decryptJson, nextSeq, Prisma, type AgentJob } from '@qaforge/db';
+import { syntaxError } from '@qaforge/runner';
 import { auditAi, JobError, prisma, readScanned, recordUsage } from './context';
 import { extractDocument, UnsupportedDocumentError } from './documents';
 
@@ -639,6 +643,280 @@ async function draftBug(
   };
 }
 
+// ---- automation ------------------------------------------------------------------------------
+
+async function generateUiTest(
+  ctx: HandlerCtx,
+  input: Extract<StartAgentJobInput, { kind: 'generate-ui-test' }>,
+): Promise<HandlerResult> {
+  const { job } = ctx;
+  const db = prisma();
+  const tc = await db.testCase.findFirst({
+    where: { id: input.testCaseId, projectId: job.projectId!, deletedAt: null },
+    include: {
+      project: true,
+      steps: { orderBy: { position: 'asc' }, include: { sharedStep: true } },
+    },
+  });
+  if (!tc) throw new JobError('The test case was deleted');
+  const env = input.environmentId
+    ? await db.environment.findFirst({
+        where: { id: input.environmentId, projectId: tc.projectId },
+      })
+    : await db.environment.findFirst({
+        where: { projectId: tc.projectId },
+        orderBy: { position: 'asc' },
+      });
+  // Names only: values never go to the model.
+  const envVarNames = env
+    ? [
+        ...Object.keys((env.variables ?? {}) as object),
+        ...(env.secrets ? Object.keys(decryptJson<Record<string, string>>(env.secrets)) : []),
+      ]
+    : [];
+  const ref = formatRef('testCase', tc.seq);
+  const run = await runAgent(
+    automationWriterAgent,
+    {
+      projectName: tc.project.name,
+      testCase: {
+        ref,
+        title: tc.title,
+        preconditions: tc.preconditions,
+        steps: tc.steps.flatMap((s) =>
+          s.sharedStep
+            ? (s.sharedStep.steps as { action: string; expected: string }[])
+            : [{ action: s.action, expected: s.expected }],
+        ),
+        testData: (tc.testData as never) ?? null,
+      },
+      baseUrl: env?.baseUrl ?? null,
+      envVarNames,
+    },
+    {
+      provider: ctx.provider,
+      model: ctx.model,
+      signal: ctx.signal,
+      secrets: ctx.secrets,
+      onProgress: (p) => ctx.progress(p, 3000, 'Writing the Playwright test'),
+    },
+  );
+  await recordUsage(job, ctx.provider, run.call);
+  if (await cancelled(job.id)) return { summary: 'Cancelled', output: null };
+  const out = run.output;
+  const parseError = syntaxError(out.code, out.fileName);
+  const test = await db.$transaction(async (tx) => {
+    // Unique path: append -2, -3… when the name is taken.
+    let filePath = `generated/${out.fileName}`;
+    for (
+      let n = 2;
+      await tx.automationTest.findFirst({
+        where: { projectId: tc.projectId, path: filePath, deletedAt: null },
+      });
+      n++
+    )
+      filePath = `generated/${out.fileName.replace(/\.spec\.ts$/, `-${n}.spec.ts`)}`;
+    await tx.automationTest.deleteMany({
+      where: { projectId: tc.projectId, path: filePath, deletedAt: { not: null } },
+    });
+    const t = await tx.automationTest.create({
+      data: {
+        projectId: tc.projectId,
+        name: tc.title.slice(0, 200),
+        path: filePath,
+        code: out.code,
+        // A person reviews the code and turns the test on.
+        status: 'DISABLED',
+        testCaseId: tc.id,
+        tags: ['ai-draft'],
+        aiGenerated: true,
+        aiJobId: job.id,
+        createdById: job.createdById,
+        updatedById: job.createdById,
+        versions: {
+          create: {
+            version: 1,
+            code: out.code,
+            reason: 'ai_generate',
+            createdById: job.createdById,
+          },
+        },
+      },
+    });
+    await auditAi(tx, job, {
+      entityType: 'automation_test',
+      entityId: t.id,
+      action: 'create',
+      after: { path: t.path, testCase: ref, status: 'DISABLED' },
+    });
+    return t;
+  });
+  return {
+    summary: `Draft test ${test.path} for ${ref}${parseError ? ' (needs a fix: syntax error)' : ''}`,
+    output: {
+      testId: test.id,
+      path: test.path,
+      assumptions: out.assumptions,
+      envVars: out.envVars,
+      confidence: out.confidence,
+      syntaxError: parseError,
+      dropped: run.dropped,
+    },
+  };
+}
+
+/** Playwright writes an accessibility snapshot of the page at the failure (error-context.md). */
+async function pageSnapshotFor(resultId: string) {
+  const a = await prisma().attachment.findFirst({
+    where: {
+      entityType: 'automation_result',
+      entityId: resultId,
+      fileName: { startsWith: 'error-context' },
+    },
+  });
+  if (!a) return null;
+  const text =
+    (
+      await createStorage()
+        .read(a.storageKey)
+        .catch(() => null)
+    )?.toString('utf8') ?? null;
+  return text?.slice(0, 60_000) ?? null;
+}
+
+async function repairUiTest(
+  ctx: HandlerCtx,
+  input: Extract<StartAgentJobInput, { kind: 'repair-ui-test' }>,
+): Promise<HandlerResult> {
+  const { job } = ctx;
+  const db = prisma();
+  const r = await db.automationResult.findFirst({
+    where: { id: input.automationResultId, automationRun: { projectId: job.projectId! } },
+    include: { automationTest: true },
+  });
+  const t = r?.automationTest;
+  if (!r || !t || t.deletedAt) throw new JobError('The test or its result was deleted');
+  if (r.status !== 'FAILED') throw new JobError('Only failed results can be repaired');
+  const run = await runAgent(
+    automationRepairAgent,
+    { path: t.path, code: t.code, error: r.error ?? '', pageSnapshot: await pageSnapshotFor(r.id) },
+    {
+      provider: ctx.provider,
+      model: ctx.model,
+      signal: ctx.signal,
+      secrets: ctx.secrets,
+      onProgress: (p) => ctx.progress(p, 3000, 'Looking for a fix'),
+    },
+  );
+  await recordUsage(job, ctx.provider, run.call);
+  if (await cancelled(job.id)) return { summary: 'Cancelled', output: null };
+  const out = run.output;
+  const parseError = out.isTestProblem ? syntaxError(out.fixedCode, t.path) : null;
+  const usable = out.isTestProblem && out.fixedCode !== t.code && !parseError;
+  await db.$transaction(async (tx) => {
+    if (usable)
+      await tx.automationTest.update({
+        where: { id: t.id },
+        data: {
+          pendingFix: {
+            jobId: job.id,
+            code: out.fixedCode,
+            summary: out.summary,
+            changes: out.changes,
+            confidence: out.confidence,
+            resultId: r.id,
+            baseVersion: t.version,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    await auditAi(tx, job, {
+      entityType: 'automation_test',
+      entityId: t.id,
+      action: usable ? 'suggest_fix' : 'no_fix',
+      metadata: { resultId: r.id },
+    });
+  });
+  return {
+    summary: usable
+      ? `Suggested fix for ${t.path}: ${out.summary}`
+      : `No test fix for ${t.path}: ${out.summary || 'the failure does not look like a test problem'}`,
+    output: { ...out, usable, syntaxError: parseError, dropped: run.dropped },
+  };
+}
+
+async function analyzeFailure(
+  ctx: HandlerCtx,
+  input: Extract<StartAgentJobInput, { kind: 'analyze-failure' }>,
+): Promise<HandlerResult> {
+  const { job } = ctx;
+  const db = prisma();
+  const r = await db.automationResult.findFirst({
+    where: { id: input.automationResultId, automationRun: { projectId: job.projectId! } },
+    include: { automationTest: true },
+  });
+  if (!r) throw new JobError('The result was deleted');
+  if (r.status !== 'FAILED') throw new JobError('Only failed results are analysed');
+  const history = await db.automationResult.findMany({
+    where: r.automationTestId
+      ? { automationTestId: r.automationTestId }
+      : { apiRequestId: r.apiRequestId },
+    orderBy: { createdAt: 'desc' },
+    take: 6,
+    select: { status: true, flaky: true },
+  });
+  const run = await runAgent(
+    failureAnalysisAgent,
+    {
+      kind: r.automationTestId ? 'ui' : 'api',
+      name: r.name,
+      error: r.error ?? '',
+      log: r.log ?? '',
+      exchange: r.exchange ? JSON.stringify(r.exchange).slice(0, 8000) : '',
+      flaky: r.flaky,
+      attempts: r.attempts,
+      history: history.map((h) => (h.flaky ? 'FLAKY' : h.status)),
+      code: r.automationTest?.code ?? '',
+    },
+    {
+      provider: ctx.provider,
+      model: ctx.model,
+      signal: ctx.signal,
+      secrets: ctx.secrets,
+      onProgress: (p) => ctx.progress(p, 800, 'Analysing the failure'),
+    },
+  );
+  await recordUsage(job, ctx.provider, run.call);
+  if (await cancelled(job.id)) return { summary: 'Cancelled', output: null };
+  const out = run.output;
+  await db.$transaction(async (tx) => {
+    await tx.automationResult.update({
+      where: { id: r.id },
+      data: {
+        failureClass: out.failureClass,
+        analysis: {
+          confidence: out.confidence,
+          reasoning: out.reasoning,
+          evidence: out.evidence,
+          suggestedAction: out.suggestedAction,
+          locatorIssue: out.locatorIssue,
+          jobId: job.id,
+          model: job.model,
+        } as Prisma.InputJsonValue,
+      },
+    });
+    await auditAi(tx, job, {
+      entityType: 'automation_result',
+      entityId: r.id,
+      action: 'analyze',
+      after: { failureClass: out.failureClass },
+    });
+  });
+  return {
+    summary: `${r.name}: ${out.failureClass.replace('_', ' ').toLowerCase()} (${Math.round(out.confidence * 100)}%)`,
+    output: out,
+  };
+}
+
 async function cancelled(jobId: string) {
   const j = await prisma().agentJob.findUnique({ where: { id: jobId }, select: { status: true } });
   return j?.status === 'CANCELLED';
@@ -657,5 +935,11 @@ export function handle(ctx: HandlerCtx): Promise<HandlerResult> {
       return reviewTestCase(ctx, input);
     case 'draft-bug':
       return draftBug(ctx, input);
+    case 'generate-ui-test':
+      return generateUiTest(ctx, input);
+    case 'repair-ui-test':
+      return repairUiTest(ctx, input);
+    case 'analyze-failure':
+      return analyzeFailure(ctx, input);
   }
 }

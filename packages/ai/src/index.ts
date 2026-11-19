@@ -7,6 +7,8 @@ export * from './agents/requirement';
 export * from './agents/test-case-writer';
 export * from './agents/test-case-reviewer';
 export * from './agents/bug';
+export * from './agents/automation';
+export * from './agents/failure-analysis';
 export * from './redact';
 export { AnthropicProvider, toTokenUsage } from './providers/anthropic';
 export { FakeProvider } from './providers/fake';

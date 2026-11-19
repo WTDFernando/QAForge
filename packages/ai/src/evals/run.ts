@@ -8,7 +8,10 @@ import {
   AnthropicProvider,
   costUsd,
   FakeProvider,
+  automationRepairAgent,
+  automationWriterAgent,
   bugAgent,
+  failureAnalysisAgent,
   requirementAgent,
   runAgent,
   testCaseReviewerAgent,
@@ -17,7 +20,16 @@ import {
   type ModelProvider,
 } from '../index';
 import type { z } from 'zod';
-import { bugCases, requirementCases, reviewerCases, writerCases, type EvalCase } from './cases';
+import {
+  automationRepairCases,
+  automationWriterCases,
+  bugCases,
+  failureAnalysisCases,
+  requirementCases,
+  reviewerCases,
+  writerCases,
+  type EvalCase,
+} from './cases';
 
 const args = process.argv.slice(2);
 const arg = (name: string) => {
@@ -56,7 +68,28 @@ const EMPTY: Record<string, unknown> = {
     rationale: '',
   },
 };
+Object.assign(EMPTY, {
+  'automation-repair': {
+    isTestProblem: false,
+    summary: '',
+    fixedCode: '',
+    changes: [],
+    confidence: 0,
+  },
+  automation: { fileName: 'x.spec.ts', code: '', envVars: [], assumptions: [], confidence: 0 },
+  'failure-analysis': {
+    failureClass: 'FLAKY',
+    confidence: 0,
+    reasoning: '',
+    evidence: '',
+    suggestedAction: '',
+    locatorIssue: false,
+  },
+});
 const MARKER: Record<string, string> = {
+  'automation-repair': 'repairing a Playwright test',
+  automation: 'Automation Agent',
+  'failure-analysis': 'Failure Analysis Agent',
   requirement: 'Requirement Agent',
   'test-case-writer': 'Test Case Writer',
   'test-case-reviewer': 'Test Case Reviewer',
@@ -100,6 +133,12 @@ async function main() {
   if (!only || only === 'writer') results.push(await suite(testCaseWriterAgent, writerCases));
   if (!only || only === 'reviewer') results.push(await suite(testCaseReviewerAgent, reviewerCases));
   if (!only || only === 'bug') results.push(await suite(bugAgent, bugCases));
+  if (!only || only === 'automation') {
+    results.push(await suite(automationWriterAgent, automationWriterCases));
+    results.push(await suite(automationRepairAgent, automationRepairCases));
+  }
+  if (!only || only === 'failure')
+    results.push(await suite(failureAnalysisAgent, failureAnalysisCases));
   const pass = results.reduce((a, r) => a + r.pass, 0);
   const total = results.reduce((a, r) => a + r.total, 0);
   const cost = results.reduce((a, r) => a + r.cost, 0);
