@@ -11,14 +11,15 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
+    "@qaforge/ai": "workspace:*",
     "@qaforge/db": "workspace:*",
+    "@qaforge/runner": "workspace:*",
     "@qaforge/shared": "workspace:*",
     "bullmq": "^5.63.0",
-    "ioredis": "^5.8.2",
-    "pino": "^10.1.0",
-    "@qaforge/ai": "workspace:*",
-    "mammoth": "^1.11.0",
     "exceljs": "^4.4.0",
+    "ioredis": "^5.8.2",
+    "mammoth": "^1.11.0",
+    "pino": "^10.1.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

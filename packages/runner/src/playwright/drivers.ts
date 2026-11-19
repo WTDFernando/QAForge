@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
 import path from 'node:path';
 
 export interface ExecOptions {
@@ -65,6 +66,22 @@ function runProcess(
 }
 
 /**
+ * Where Playwright's browsers live. Tests run with HOME set to the workspace, so the default
+ * (~/.cache/ms-playwright) must be resolved against the real home directory up front.
+ */
+export function browsersPath(): string {
+  if (process.env.PLAYWRIGHT_BROWSERS_PATH) return process.env.PLAYWRIGHT_BROWSERS_PATH;
+  if (process.platform === 'darwin')
+    return path.join(homedir(), 'Library', 'Caches', 'ms-playwright');
+  if (process.platform === 'win32')
+    return path.join(
+      process.env.LOCALAPPDATA ?? path.join(homedir(), 'AppData', 'Local'),
+      'ms-playwright',
+    );
+  return path.join(process.env.XDG_CACHE_HOME ?? path.join(homedir(), '.cache'), 'ms-playwright');
+}
+
+/**
  * Development and CI only: runs Playwright as a child process on this machine. Tests can reach
  * whatever this machine can, so it refuses to run in production unless explicitly allowed.
  */
@@ -85,7 +102,7 @@ export class ProcessDriver implements SandboxDriver {
       PATH: process.env.PATH,
       HOME: opts.dir,
       CI: '1',
-      PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH,
+      PLAYWRIGHT_BROWSERS_PATH: browsersPath(),
       ...opts.env,
     };
     return runProcess(process.execPath, [cli, 'test'], opts.dir, env, opts);

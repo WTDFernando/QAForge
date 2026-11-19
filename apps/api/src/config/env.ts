@@ -39,7 +39,22 @@ const envSchema = z.object({
   RATE_LIMIT_API_PER_MIN: z.coerce.number().int().min(1).default(600),
   RATE_LIMIT_AUTH_PER_MIN: z.coerce.number().int().min(1).default(10),
   RATE_LIMIT_AI_PER_MIN: z.coerce.number().int().min(1).default(20),
+  /**
+   * Let API tests call private/loopback addresses (e.g. a local app under test). Defaults to on
+   * outside production; in production only enable it for a dedicated, isolated runner network.
+   */
+  AUTOMATION_ALLOW_PRIVATE_NETWORKS: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
+  /** Public URL of the web app, used in CI responses ("open the run" links). */
+  PUBLIC_APP_URL: z.string().url().optional(),
 });
+
+/** API tests may reach private addresses only when explicitly allowed (or outside production). */
+export function automationAllowsPrivate(e = env()): boolean {
+  return e.AUTOMATION_ALLOW_PRIVATE_NETWORKS ?? e.NODE_ENV !== 'production';
+}
 
 export type Env = z.infer<typeof envSchema>;
 

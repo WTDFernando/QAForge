@@ -21,7 +21,22 @@ const DYNAMIC: Record<string, () => string> = {
  * they are and reported, so a typo shows up in the result instead of sending an empty value.
  */
 export function interpolate(input: string, scope: VariableScope, missing?: Set<string>): string {
-  return input.replace(/\{\{\s*([$\w.-]+)\s*\}\}/g, (all, name: string) => {
+  // Variables may refer to other variables ({{api}} = "{{baseUrl}}/api"): expand up to 5 levels,
+  // then report what is still unresolved (unknown names, or a variable that refers to itself).
+  let out = input;
+  for (let depth = 0; depth < 5; depth++) {
+    const next = interpolateOnce(out, scope);
+    if (next === out) break;
+    out = next;
+  }
+  if (missing) for (const m of out.matchAll(PLACEHOLDER)) missing.add(m[1]!);
+  return out;
+}
+
+const PLACEHOLDER = /\{\{\s*([$\w.-]+)\s*\}\}/g;
+
+function interpolateOnce(input: string, scope: VariableScope): string {
+  return input.replace(PLACEHOLDER, (all, name: string) => {
     if (name in DYNAMIC) return DYNAMIC[name]!();
     if (name.startsWith('env.')) {
       const key = name.slice(4);
@@ -31,7 +46,6 @@ export function interpolate(input: string, scope: VariableScope, missing?: Set<s
       const v = scope.vars[name] ?? scope.env[name] ?? scope.secrets[name];
       if (v !== undefined) return v;
     }
-    missing?.add(name);
     return all;
   });
 }

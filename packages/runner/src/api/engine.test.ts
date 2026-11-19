@@ -95,6 +95,15 @@ describe('variables and JSONPath', () => {
       'https://x/u/7?t=shh&x={{nope}}',
     );
     expect([...missing]).toEqual(['nope']);
+    const nested = {
+      vars: { api: '{{env.BASE}}/api', loop: '{{loop}}' },
+      env: { BASE: 'https://x' },
+      secrets: {},
+    };
+    expect(interpolate('{{api}}/me', nested)).toBe('https://x/api/me');
+    const m2 = new Set<string>();
+    expect(interpolate('{{loop}}', nested, m2)).toBe('{{loop}}');
+    expect([...m2]).toEqual(['loop']);
     expect(interpolate('{{$guid}}', scope)).toMatch(/^[0-9a-f-]{36}$/);
     expect(Number(interpolate('{{$timestamp}}', scope))).toBeGreaterThan(1e9);
   });

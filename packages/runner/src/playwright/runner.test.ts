@@ -1,7 +1,14 @@
 import { existsSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { configSource, createWorkspace, DockerDriver, ProcessDriver, runUiTests } from './index';
+import {
+  browsersPath,
+  configSource,
+  createWorkspace,
+  DockerDriver,
+  ProcessDriver,
+  runUiTests,
+} from './index';
 
 let server: Server;
 let base = '';
@@ -121,6 +128,17 @@ describe('sandbox configuration', () => {
     );
     expect(args.join(' ')).not.toContain('hunter2');
     expect(args.join(' ')).toContain('--env SHOP_PASSWORD');
+  });
+
+  it('finds browsers even when PLAYWRIGHT_BROWSERS_PATH is not set', () => {
+    const prev = process.env.PLAYWRIGHT_BROWSERS_PATH;
+    delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+    try {
+      expect(browsersPath()).toMatch(/ms-playwright$/);
+      expect(browsersPath()).not.toContain('qaforge-run-');
+    } finally {
+      if (prev) process.env.PLAYWRIGHT_BROWSERS_PATH = prev;
+    }
   });
 
   it('refuses the process sandbox in production unless allowed', async () => {

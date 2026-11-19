@@ -12,6 +12,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ProjectsModule } from './projects/projects.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { AiModule } from './ai/ai.module';
+import { AutomationModule } from './automation/automation.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { TestRunsModule } from './test-runs/test-runs.module';
 import { BugsModule } from './bugs/bugs.module';
@@ -51,6 +52,7 @@ import { ViewsModule } from './views/views.module';
     ViewsModule,
     DashboardModule,
     AiModule,
+    AutomationModule,
     NotificationsModule,
     TestRunsModule,
     BugsModule,

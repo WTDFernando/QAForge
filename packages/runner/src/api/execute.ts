@@ -358,6 +358,7 @@ export async function executeRequest(
       status: res.status,
       assertions: outcomes.map((o) => ({
         ...o,
+        assertion: JSON.parse(redact(JSON.stringify(o.assertion))) as Assertion,
         actual: redact(o.actual),
         message: redact(o.message),
       })),

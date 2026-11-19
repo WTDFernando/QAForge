@@ -36,6 +36,9 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm lint
+      # The automation runner tests launch real Chromium.
+      - name: Install Playwright browser
+        run: pnpm --filter @qaforge/runner exec playwright install --with-deps chromium
       - run: pnpm test
       - name: Agent eval harness (no API calls)
         run: pnpm --filter @qaforge/ai eval -- --fake
@@ -51,4 +54,4 @@ jobs:
           (cd apps/worker && node dist/main.js &)
           (cd apps/web && pnpm start &)
           npx wait-on -t 60000 http://localhost:4000/health http://localhost:3000/login
-          cd apps/web && npx playwright install --with-deps chromium && pnpm e2e
+          cd apps/web && pnpm e2e
