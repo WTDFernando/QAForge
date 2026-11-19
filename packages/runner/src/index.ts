@@ -3,3 +3,4 @@ export * from './api/jsonpath';
 export * from './api/net-guard';
 export * from './api/variables';
 export * from './importers';
+export * from './playwright';
