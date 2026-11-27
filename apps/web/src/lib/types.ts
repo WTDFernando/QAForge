@@ -302,6 +302,7 @@ export interface TestRunRow {
   seq: number;
   ref: string;
   name: string;
+  releaseId: string | null;
   description: string;
   status: TestRunStatus;
   build: string | null;

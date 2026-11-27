@@ -13,7 +13,7 @@ Status: **proposal, waiting for product owner review.** No feature code for the 
 | **1 Core QA**           | Requirements, test cases, **test runs**, **bugs**, traceability, dashboard                   | ✅ Requirements, test cases, traceability (req ↔ TC), dashboard. ⏳ **Test runs, bugs**                                                             |
 | **2 AI agents**         | Framework, Requirement, Writer, Reviewer, **Bug Agent**, review queue, usage                 | ✅ All except ⏳ **Bug Agent** (needs bugs)                                                                                                         |
 | 3 Automation            | API testing, Playwright runner, schedules, CI webhooks, Automation + Failure Analysis agents | ⏳                                                                                                                                                  |
-| 4 Releases & reports    | Releases, gates, approvals, reports, exports, share links, Report Agent                      | ⏳                                                                                                                                                  |
+| 4 Releases & reports    | Releases, gates, approvals, reports, exports, share links, Report Agent                      | ✅                                                                                                                                                  |
 | 5 Integrations & polish | Jira/GitLab sync, Slack/Teams, public API + webhooks + MCP, Copilot, perf, onboarding wizard | ✅ QA Copilot (built early). ⏳ rest                                                                                                                |
 | 6+ Future               | k6, ZAP, axe, visual                                                                         | Nav slots + feature flags exist                                                                                                                     |
 
@@ -118,7 +118,7 @@ All 30 entities from the brief's minimum data model are covered. Naming differen
 4. **Bug workflow** New → Triaged → In progress → Fixed → Ready for retest → Closed / Reopened, with `resolution` (duplicate, won't fix…) and `duplicateOfId`. Kanban order via fractional `rank`.
 5. **Comments** are one table (`entityType`, `entityId`) for bugs now and requirements/test cases later, with @mentions → notifications.
 6. **Custom fields**: definitions in `CustomField`; values in each item's `customFields` JSONB (filterable with GIN indexes), avoiding a slow EAV table.
-7. **Release contents** use `ReleaseItem` with three nullable foreign keys plus a CHECK constraint, so the brief's `ReleaseItem` keeps referential integrity.
+7. **Release contents** use `ReleaseItem` for requirements and bugs (CHECK: exactly one set) and `TestRun.releaseId` for runs, so every link keeps referential integrity.
 8. **Reports freeze numbers** in `data` (computed from the DB); the AI only writes `narrative`. Share links store only a token hash.
 9. **Automation results mirror into a Test Run** (`AutomationRun.testRunId`, `TestRunResult.automationResultId`), so manual and automated results are reported together.
 10. **Webhooks are idempotent**: inbound CI calls use `AutomationRun.idempotencyKey`; outbound deliveries carry a stable `eventId` with retry state.

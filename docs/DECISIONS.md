@@ -6,7 +6,7 @@ Where the brief offered alternatives, these were chosen. Ask to revisit any of t
 | ------------ | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Auth library | **Better Auth**                                | First-class Prisma adapter, email/password + Google + Microsoft built in, sessions stored in our DB. Org/RBAC is our own model (not the plugin) so permissions stay in `@qaforge/shared`. |
 | Realtime     | **Server-Sent Events** (from Phase 3)          | Progress and agent status are server → client only. SSE works through proxies and needs no extra infra.                                                                                   |
-| PDF export   | **Playwright-to-PDF** (Phase 6)                | Reuses the same Playwright we ship for test execution and renders the report's HTML exactly.                                                                                              |
+| PDF export   | **Playwright-to-PDF** (Phase 4)                | Reuses the same Playwright we ship for test execution and renders the report's HTML exactly. DOCX via `docx`, XLSX via `exceljs`.                                                         |
 | CI           | **GitHub Actions**                             | `.github/workflows/ci.yml`: build, typecheck, lint, unit/integration tests, E2E.                                                                                                          |
 | Validation   | **Zod 4** everywhere (`nestjs-zod` in the API) | One schema serves frontend forms, API DTOs and OpenAPI.                                                                                                                                   |
 
@@ -69,7 +69,7 @@ https://www.figma.com/design/1r4qeekenErekQjLcqfbHN
 
 - The `QAForge tokens` variable collection mirrors `apps/web/src/app/globals.css` (light mode; the Figma plan allows one mode, and dark mode lives in code only).
 - Components: Button, Result status, Severity, Nav item, Avatar, Kbd, Bug card, Sidebar, Topbar.
-- Screens: 01 Run execution, 02 Bugs board, 03 Bug detail, 04 Quick report, 05 Test runs.
+- Screens: 01 Run execution, 02 Bugs board, 03 Bug detail, 04 Quick report, 05 Test runs, 06 API client, 07 Release readiness, 08 Report.
 - Status never relies on colour alone: every result and severity has an icon or glyph plus a label (WCAG 1.4.1).
 - New tokens added for this: `destructive-text/-subtle`, `success-subtle`, `warning-subtle`, `primary-subtle`, `blocked`, `blocked-text/-subtle`.
 
@@ -88,3 +88,10 @@ Measured on the `PERF` fixture (`pnpm db:perf-fixture`: 10,000 cases, 30,000 ste
 - **No new indexes.** Every list query uses the `(projectId, seq)` unique index; extra sort indexes would slow down writes for no measurable gain at this size.
 - **Virtualised table body.** Pages of more than 100 rows (100, 250 or 500 per page) render only the rows in view with `@tanstack/react-virtual`, keeping real `<tr>` elements, `aria-rowcount` and `aria-rowindex` for screen readers.
 - Both timed checks run in CI on every push.
+
+## Releases and reports (Phase 4)
+
+- A release's test runs are linked with `TestRun.releaseId` (a run belongs to at most one release); `ReleaseItem` holds only requirements and bugs (CHECK: exactly one set). This replaces the three-key `ReleaseItem` sketched in the architecture doc.
+- Gate metrics, the readiness score and the Go/No-Go verdict are pure functions in `@qaforge/shared/releases` over numbers measured by `computeReleaseMetrics` in `@qaforge/db`. API, worker and web use the same code (ADR 0014).
+- Reports are a format-neutral `ReportDoc` (KPIs, tables, bar charts) built in `packages/reports`; every export and the web page render that one document (ADR 0015).
+- Email goes over SMTP (`SMTP_URL`); Mailpit catches it in development (`docker compose --profile mail up -d`).

@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getSessionCookie } from 'better-auth/cookies';
 
 const PUBLIC_PATHS = ['/login', '/signup'];
+/** Open to everyone, signed in or not: read-only shared report links. */
+const OPEN_PATHS = ['/share/'];
 
 /**
  * Optimistic auth redirect based on cookie presence only (fast, no network).
@@ -9,6 +11,7 @@ const PUBLIC_PATHS = ['/login', '/signup'];
  */
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+  if (OPEN_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next();
   const hasSession = !!getSessionCookie(request);
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 

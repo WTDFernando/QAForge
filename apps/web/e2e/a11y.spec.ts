@@ -17,6 +17,9 @@ const PAGES = [
   ['automation runs', '/acme/p/PAY/automation/runs', 'Flaky results'],
   ['automation run', '/acme/p/PAY/automation/runs/AUT-0001', 'Failure analysis'],
   ['schedules & ci', '/acme/p/PAY/automation/ci', 'Weekday smoke'],
+  ['releases', '/acme/p/PAY/releases', 'In progress'],
+  ['release', '/acme/p/PAY/releases/REL-0001', 'Quality gates'],
+  ['reports', '/acme/p/PAY/reports', 'Emailed reports'],
 ] as const;
 
 for (const theme of ['light', 'dark'] as const) {

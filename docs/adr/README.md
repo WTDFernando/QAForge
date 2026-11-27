@@ -17,3 +17,6 @@ Short records of decisions that are expensive to reverse. Format: context, decis
 | [0011](0011-automation-sandbox.md)     | Automation runs in a container sandbox; SSRF guard for API tests      | Accepted |
 | [0012](0012-ci-tokens.md)              | CI uses hashed project tokens and idempotent triggers                 | Accepted |
 | [0013](0013-ai-automation-approval.md) | AI-written tests start disabled; repairs need approval                | Accepted |
+| [0014](0014-release-gates.md)          | Release readiness is rules-based; gates are frozen at sign-off        | Accepted |
+| [0015](0015-report-numbers.md)         | Report numbers come only from the database; AI writes text only       | Accepted |
+| [0016](0016-share-links.md)            | Read-only report links: hashed tokens that expire                     | Accepted |

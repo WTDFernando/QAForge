@@ -67,6 +67,7 @@ async function main() {
   await seedPaymentsContent(org.id, ownerId);
   await seedRunsAndBugs(org.id);
   await seedAutomation(org.id);
+  await seedReleases(org.id);
   console.log(`Seeded org "${org.name}" with ${USERS.length} users. Password: ${PASSWORD}`);
 }
 
@@ -1091,6 +1092,119 @@ test('declined card shows a clear error', async ({ page }) => {
   });
   await prisma.projectCounter.createMany({
     data: [{ projectId: project.id, kind: 'automationRun', value: 1 }],
+    skipDuplicates: true,
+  });
+}
+
+/**
+ * Phase 4 demo: a release being tested (blocked by an open critical bug, two approvers named),
+ * an older shipped release, and a paused weekly email of the bug summary.
+ */
+async function seedReleases(orgId: string) {
+  const project = await prisma.project.findFirstOrThrow({
+    where: { organizationId: orgId, key: 'PAY' },
+  });
+  if (await prisma.release.findFirst({ where: { projectId: project.id } })) return;
+  const lead = await prisma.user.findUniqueOrThrow({ where: { email: 'lead@qaforge.dev' } });
+  const client = await prisma.user.findUniqueOrThrow({ where: { email: 'client@qaforge.dev' } });
+  const who = { projectId: project.id, createdById: lead.id, updatedById: lead.id };
+  const stories = await prisma.requirement.findMany({
+    where: { projectId: project.id, deletedAt: null, type: 'STORY' },
+    orderBy: { seq: 'asc' },
+    take: 6,
+  });
+  const run = await prisma.testRun.findFirst({
+    where: { projectId: project.id, name: 'Release 2.4 regression' },
+  });
+  const nightly = await prisma.testRun.findFirst({
+    where: { projectId: project.id, name: 'Payments smoke · nightly' },
+  });
+  const gate = (
+    metric: string,
+    operator: string,
+    threshold: number,
+    position: number,
+    blocking = true,
+    params = {},
+  ) => ({
+    metric: metric as never,
+    operator: operator as never,
+    threshold,
+    params,
+    blocking,
+    position,
+  });
+  const spring = await prisma.release.create({
+    data: {
+      ...who,
+      seq: 1,
+      name: 'Spring release',
+      version: '2.4.0',
+      description: 'Card payments with 3-D Secure, digital wallets and partial refunds.',
+      targetDate: new Date(Date.now() + 18 * 86_400_000),
+      items: { create: stories.map((r) => ({ requirementId: r.id, createdById: lead.id })) },
+      gates: {
+        create: [
+          gate('EXECUTION_COMPLETE', 'GTE', 100, 0),
+          gate('PASS_RATE', 'GTE', 95, 1),
+          gate('OPEN_BUGS', 'LTE', 0, 2, true, { severities: ['BLOCKER', 'CRITICAL'] }),
+          gate('REQUIREMENT_COVERAGE', 'GTE', 90, 3, false),
+        ],
+      },
+      approvals: {
+        create: [
+          { approverId: lead.id, roleLabel: 'QA Lead' },
+          { approverId: client.id, roleLabel: 'Client' },
+        ],
+      },
+    },
+  });
+  if (run) await prisma.testRun.update({ where: { id: run.id }, data: { releaseId: spring.id } });
+
+  const winter = await prisma.release.create({
+    data: {
+      ...who,
+      seq: 2,
+      name: 'Winter release',
+      version: '2.3.0',
+      description: 'Saved cards and receipts.',
+      status: 'RELEASED',
+      targetDate: new Date(Date.now() - 20 * 86_400_000),
+      requestedAt: new Date(Date.now() - 23 * 86_400_000),
+      releasedAt: new Date(Date.now() - 21 * 86_400_000),
+      gates: { create: [gate('PASS_RATE', 'GTE', 95, 0)] },
+      approvals: {
+        create: [
+          {
+            approverId: lead.id,
+            roleLabel: 'QA Lead',
+            status: 'APPROVED',
+            comment: 'All regression passed.',
+            decidedAt: new Date(Date.now() - 22 * 86_400_000),
+          },
+        ],
+      },
+    },
+  });
+  if (nightly)
+    await prisma.testRun.update({ where: { id: nightly.id }, data: { releaseId: winter.id } });
+
+  await prisma.reportSchedule.create({
+    data: {
+      projectId: project.id,
+      name: 'Weekly bug summary',
+      type: 'BUG_SUMMARY',
+      cron: '0 8 * * 1',
+      timezone: 'UTC',
+      formats: ['pdf', 'xlsx'],
+      recipients: ['product.owner@example.com'],
+      // Paused so a fresh install doesn't send email on its own.
+      enabled: false,
+      createdById: lead.id,
+    },
+  });
+  await prisma.projectCounter.createMany({
+    data: [{ projectId: project.id, kind: 'release', value: 2 }],
     skipDuplicates: true,
   });
 }

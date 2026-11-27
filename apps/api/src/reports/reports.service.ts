@@ -60,11 +60,26 @@ export class ReportsService implements OnModuleDestroy {
     );
   }
 
-  private exportsOf(reportIds: string[]) {
-    return this.prisma.client.attachment.findMany({
+  /**
+   * Current exports per report: newest file per format. (While a re-export runs, the old files
+   * are still there for a moment.)
+   */
+  private async exportsOf(reportIds: string[]) {
+    const files = await this.prisma.client.attachment.findMany({
       where: { entityType: 'report', entityId: { in: reportIds } },
       select: { id: true, entityId: true, fileName: true, size: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
     });
+    const seen = new Set<string>();
+    const order = (f: { fileName: string }) => EXPORT_FORMATS.indexOf(formatOf(f.fileName));
+    return files
+      .filter((f) => {
+        const key = `${f.entityId}:${formatOf(f.fileName)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => order(a) - order(b));
   }
 
   async list(projectId: string, releaseId?: string) {
@@ -281,6 +296,7 @@ export class ReportsService implements OnModuleDestroy {
     const r = await this.byToken(token);
     const files = await this.prisma.client.attachment.findMany({
       where: { entityType: 'report', entityId: r.id },
+      orderBy: { createdAt: 'desc' },
     });
     const a = files.find((f) => formatOf(f.fileName) === format);
     if (!a) throw new NotFoundException('This export isn’t available');

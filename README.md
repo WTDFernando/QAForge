@@ -55,16 +55,19 @@ Agent evals (real model, costs roughly $0.50-$2 per run): `pnpm --filter @qaforg
 2. Open the run and execute: `P` pass, `F` fail, `B` blocked, `S` skip, `J`/`K` move, `N` next untested. Mark individual steps, paste screenshots (`Ctrl+V`) and add notes.
 3. On a failed step, **Report bug from this step**: steps, expected/actual, run, environment and build are filled in.
 4. **Bugs**: drag cards across the board (or focus a card and press `1`–`5`), open a bug to move it through New → Triaged → In progress → Fixed → Ready for retest → Closed. The bell shows assignments, mentions and status changes.
+5. **Releases**: add requirements, test runs and bugs, set quality gates, name approvers. When every blocking gate passes, **Request approval**; each approver approves or rejects (with a reason); then **Mark as released**.
+6. **Reports**: Go/No-Go, test execution, traceability matrix, bug, sprint and automation summaries, with an optional AI summary. Download PDF, Word, Excel or CSV, share a read-only link, or email a report on a schedule.
 
 Designs live in Figma: https://www.figma.com/design/1r4qeekenErekQjLcqfbHN (see [DECISIONS.md](docs/DECISIONS.md#design-source-figma)).
 
 ## Optional services
 
-| Profile   | Command                                                            | Use                                                                                 |
-| --------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| `scan`    | `docker compose --profile scan up -d` then `CLAMAV_HOST=localhost` | Malware scanning of uploads (files are blocked until clean)                         |
-| `backup`  | `docker compose --profile backup up -d`                            | Nightly `pg_dump` with 14-day retention, see [infra/backup](infra/backup/README.md) |
-| `storage` | `docker compose --profile storage up -d`                           | MinIO, if you want to try the S3 driver locally                                     |
+| Profile   | Command                                                                     | Use                                                                                 |
+| --------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `scan`    | `docker compose --profile scan up -d` then `CLAMAV_HOST=localhost`          | Malware scanning of uploads (files are blocked until clean)                         |
+| `backup`  | `docker compose --profile backup up -d`                                     | Nightly `pg_dump` with 14-day retention, see [infra/backup](infra/backup/README.md) |
+| `storage` | `docker compose --profile storage up -d`                                    | MinIO, if you want to try the S3 driver locally                                     |
+| `mail`    | `docker compose --profile mail up -d` then `SMTP_URL=smtp://localhost:1025` | Catches scheduled report emails; read them at http://localhost:8025                 |
 
 ## Repository layout
 
@@ -72,12 +75,13 @@ Designs live in Figma: https://www.figma.com/design/1r4qeekenErekQjLcqfbHN (see 
 apps/
   web/      Next.js 16 (App Router) + Tailwind 4 + shadcn/ui + TanStack Query/Table
   api/      NestJS 11 REST API, Better Auth, RBAC, audit log, Swagger
-  worker/   BullMQ workers (AI agents, test runner, reports land here)
+  worker/   BullMQ workers: AI agents, automation runs, reports and scheduled email
 packages/
   db/       Prisma schema, migrations, seed
   shared/   Zod schemas, RBAC matrix, queue contracts, ID helpers (used by web + api + worker)
   ai/       agent framework: provider adapters (Claude), versioned prompts, agents, evals
   runner/   (Phase 3) Playwright UI + API execution engine
+  reports/  (Phase 4) report builders and PDF/DOCX/XLSX/CSV renderers
   ui/       shared design system (components live in apps/web until a 2nd consumer exists)
 infra/docker/  production Dockerfiles
 infra/backup/  backup + restore scripts
