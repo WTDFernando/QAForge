@@ -1,6 +1,6 @@
 # Checkpoint: Phase 4 — Releases & reports
 
-Date: 2026-11-27 · Branch: `main`
+Date: 2026-11-27 · Branch: `main` · CI: green
 
 ## What was built
 
@@ -48,6 +48,8 @@ Sign in as `lead@qaforge.dev` / `qaforge-demo-1`:
 | E2E (Playwright), new            | 5 tests: blocked release can’t be sent for approval; plan → approve (as the client) → ship; Go/No-Go with AI summary, PDF download, share link on and off; period bug summary; role limits |
 | Accessibility (axe, WCAG 2.2 AA) | No serious or critical violations on 18 pages (releases, release, reports added) in light and dark, plus the report page and the shared report                                             |
 | Build / typecheck / lint         | Pass (2 older lint warnings)                                                                                                                                                               |
+
+CI on a fresh seed: all 42 E2E tests pass (the 5 new ones included), plus build, typecheck, lint and unit tests.
 
 ## Known limitations
 
