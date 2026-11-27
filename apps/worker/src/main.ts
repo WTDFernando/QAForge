@@ -1,6 +1,6 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { QUEUES, type AiJobPayload, type AutomationJob } from '@qaforge/shared';
+import { QUEUES, type AiJobPayload, type AutomationJob, type ReportJob } from '@qaforge/shared';
 import { logger } from './logger';
 import { processSystemJob } from './processors';
 import { createAiProcessor } from './ai/processor';
@@ -8,6 +8,7 @@ import { scanningEnabled } from '@qaforge/db';
 import { createScanProcessor } from './scan';
 import { createAutomationProcessor } from './automation/processor';
 import { queueFailureAnalysis } from './automation/auto-analysis';
+import { createReportProcessor } from './reports/processor';
 
 const connection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
@@ -26,6 +27,16 @@ void automationQueue
   .catch((err) => logger.error({ err }, 'could not register the schedule tick'));
 
 const aiQueue = new Queue<AiJobPayload>(QUEUES.ai, { connection });
+
+const reportQueue = new Queue<ReportJob>(QUEUES.reports, { connection });
+// Report schedule tick: every minute, generate (and email) reports whose schedule is due.
+void reportQueue
+  .upsertJobScheduler(
+    'report-schedule-tick',
+    { every: 60_000 },
+    { name: 'tick', data: { kind: 'tick' } },
+  )
+  .catch((err) => logger.error({ err }, 'could not register the report schedule tick'));
 
 const workers = [
   new Worker(QUEUES.system, processSystemJob, { connection, concurrency: 4 }),
@@ -49,6 +60,17 @@ const workers = [
       lockDuration: 120_000,
     },
   ),
+  // Reports: building data is quick; PDF rendering starts a browser, so keep it small.
+  new Worker(
+    QUEUES.reports,
+    createReportProcessor((job) =>
+      reportQueue.add(job.kind, job, {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 5000 },
+      }),
+    ),
+    { connection, concurrency: Number(process.env.REPORT_CONCURRENCY ?? 2), lockDuration: 120_000 },
+  ),
   // Malware scanning only runs when ClamAV is configured (compose profile "scan").
   ...(scanningEnabled()
     ? [new Worker(QUEUES.scan, createScanProcessor(), { connection, concurrency: 2 })]
@@ -66,6 +88,7 @@ async function shutdown(signal: string) {
   await Promise.all(workers.map((w) => w.close()));
   await automationQueue.close();
   await aiQueue.close();
+  await reportQueue.close();
   await connection.quit();
   await publisher.quit();
   process.exit(0);

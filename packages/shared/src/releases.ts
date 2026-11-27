@@ -375,6 +375,6 @@ export const updateReportScheduleSchema = patchOf(reportScheduleSchema);
 export type ReportScheduleInput = z.infer<typeof reportScheduleSchema>;
 
 export interface ReportJob {
-  kind: 'generate' | 'tick';
+  kind: 'generate' | 'export' | 'tick';
   reportId?: string;
 }
