@@ -25,6 +25,13 @@ services:
       interval: 5s
       retries: 10
 
+  # Catches emails in development (scheduled reports): open http://localhost:8025.
+  # Set SMTP_URL=smtp://localhost:1025 in .env to use it.
+  mailpit:
+    profiles: [mail]
+    image: axllent/mailpit:v1.33.1
+    ports: ['1025:1025', '8025:8025']
+
   minio:
     profiles: [storage]
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z

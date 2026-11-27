@@ -136,6 +136,23 @@ export function fakeResponder(req: StructuredRequest<z.ZodType>): unknown {
       confidence: 0.55,
     };
   }
+  if (req.system.includes('Report Agent')) {
+    // Only reuses lines from the report, so every number is grounded.
+    const kpis = [...text.matchAll(/^- ([^:\n]+): (.+)$/gm)]
+      .slice(0, 6)
+      .map((m) => `${m[1]}: ${m[2]}`);
+    const scope = /^Scope: (.*)$/m.exec(text)?.[1] ?? '';
+    const title = /^Report: (.*)$/m.exec(text)?.[1] ?? 'Report';
+    const verdict = /^Verdict \(computed by rules\): (.*)$/m.exec(text)?.[1];
+    const bugs =
+      /## Open bugs\n[^\n]*\n((?:BUG-[^\n]*\n?)+)/.exec(text)?.[1]?.trim().split('\n') ?? [];
+    return {
+      summary: `${title} for ${scope}. ${kpis.slice(0, 2).join('. ')}.`,
+      highlights: kpis.slice(2, 4).map((k) => `${k}.`),
+      risks: bugs.slice(0, 3).map((b) => `${b.split(' | ').slice(0, 2).join(' ')} is still open.`),
+      recommendation: verdict ? `${verdict}.` : 'Look at the failed and blocked results first.',
+    };
+  }
   if (req.system.includes('Failure Analysis Agent')) {
     const error = /Error:\n([\s\S]*?)\n\nLog/.exec(text)?.[1] ?? '';
     const first = error.split('\n').find((l) => l.trim()) ?? '';

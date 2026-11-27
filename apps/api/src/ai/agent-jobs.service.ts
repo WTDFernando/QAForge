@@ -34,6 +34,7 @@ const KIND_PERMISSION = {
   'generate-ui-test': 'automation:write',
   'repair-ui-test': 'automation:write',
   'analyze-failure': 'automation:run',
+  'write-report': 'report:write',
 } as const;
 
 const SOURCE_TYPE = {
@@ -45,6 +46,7 @@ const SOURCE_TYPE = {
   'generate-ui-test': 'test_case',
   'repair-ui-test': 'automation_result',
   'analyze-failure': 'automation_result',
+  'write-report': 'report',
 } as const;
 
 const SCREENSHOT_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -224,6 +226,15 @@ export class AgentJobsService implements OnModuleDestroy {
           throw new BadRequestException('Only failed results can be analysed or repaired');
         if (input.kind === 'repair-ui-test' && !r.automationTestId)
           throw new BadRequestException('Only Playwright tests can be repaired');
+        return [r.id];
+      }
+      case 'write-report': {
+        const r = await db.report.findFirst({
+          where: { id: input.reportId, projectId },
+          select: { id: true, status: true },
+        });
+        if (!r) throw new NotFoundException('Report not found');
+        if (r.status !== 'READY') throw new BadRequestException('The report isn’t ready yet');
         return [r.id];
       }
     }

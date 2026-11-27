@@ -2,6 +2,7 @@ import {
   formatRef,
   richTextToPlain,
   type RichTextNode,
+  type ReportDoc,
   type StartAgentJobInput,
 } from '@qaforge/shared';
 import {
@@ -17,10 +18,12 @@ import {
   type ModelProvider,
   type ProgressUpdate,
   type RequirementAgentOutput,
+  reportAgent,
 } from '@qaforge/ai';
 import { createStorage, decryptJson, nextSeq, Prisma, type AgentJob } from '@qaforge/db';
 import { syntaxError } from '@qaforge/runner';
 import { auditAi, JobError, prisma, readScanned, recordUsage } from './context';
+import { exportReport } from '../reports/processor';
 import { extractDocument, UnsupportedDocumentError } from './documents';
 
 export interface HandlerCtx {
@@ -917,6 +920,51 @@ async function analyzeFailure(
   };
 }
 
+/** Report Agent: narrative from the report's own numbers, then fresh exports that include it. */
+async function writeReport(
+  ctx: HandlerCtx,
+  input: Extract<StartAgentJobInput, { kind: 'write-report' }>,
+): Promise<HandlerResult> {
+  const db = prisma();
+  const { job } = ctx;
+  const report = await db.report.findFirst({
+    where: { id: input.reportId, projectId: job.projectId! },
+  });
+  if (!report?.data) throw new JobError('The report has no data yet');
+  const run = await runAgent(
+    reportAgent,
+    { doc: report.data as unknown as ReportDoc, audience: 'stakeholders' },
+    {
+      provider: ctx.provider,
+      model: ctx.model,
+      signal: ctx.signal,
+      secrets: ctx.secrets,
+      onProgress: (p) => ctx.progress(p, 1200, 'Writing the summary'),
+    },
+  );
+  await recordUsage(job, ctx.provider, run.call);
+  if (await cancelled(job.id)) return { summary: 'Cancelled', output: null };
+  await db.$transaction(async (tx) => {
+    await tx.report.update({
+      where: { id: report.id },
+      data: { narrative: run.output as Prisma.InputJsonValue, aiJobId: job.id },
+    });
+    await auditAi(tx, job, {
+      entityType: 'report',
+      entityId: report.id,
+      action: 'write_narrative',
+      after: { dropped: run.dropped.length },
+    });
+  });
+  await exportReport(report.id);
+  return {
+    summary: run.dropped.length
+      ? `Summary written; ${run.dropped.length} sentence${run.dropped.length === 1 ? '' : 's'} with numbers not in the report removed`
+      : 'Summary written from the report numbers',
+    output: run.output,
+  };
+}
+
 async function cancelled(jobId: string) {
   const j = await prisma().agentJob.findUnique({ where: { id: jobId }, select: { status: true } });
   return j?.status === 'CANCELLED';
@@ -941,5 +989,7 @@ export function handle(ctx: HandlerCtx): Promise<HandlerResult> {
       return repairUiTest(ctx, input);
     case 'analyze-failure':
       return analyzeFailure(ctx, input);
+    case 'write-report':
+      return writeReport(ctx, input);
   }
 }

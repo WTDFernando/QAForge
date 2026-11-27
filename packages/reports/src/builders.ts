@@ -104,6 +104,7 @@ export async function testExecution(ctx: BuildContext): Promise<ReportDoc> {
   const runIds = runs.map((r) => r.id);
   const results = await ctx.db.testRunResult.findMany({
     where: { testRunId: { in: runIds } },
+    orderBy: [{ testRun: { seq: 'asc' } }, { position: 'asc' }],
     select: {
       id: true,
       testRunId: true,
@@ -157,7 +158,7 @@ export async function testExecution(ctx: BuildContext): Promise<ReportDoc> {
       if (r.status === 'FAILED') g.failed++;
       m.set(k, g);
     }
-    return [...m.entries()].sort((a, b) => b[1].total - a[1].total);
+    return [...m.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]));
   };
   const runRef = new Map(runs.map((r) => [r.id, formatRef('testRun', r.seq)]));
   const title = (r: (typeof results)[number]) =>
@@ -534,6 +535,7 @@ export async function traceability(ctx: BuildContext): Promise<ReportDoc> {
       priority: true,
       testCases: {
         where: { testCase: { deletedAt: null } },
+        orderBy: { testCase: { seq: 'asc' } },
         select: {
           testCase: {
             select: {
@@ -764,7 +766,7 @@ export async function bugSummary(ctx: BuildContext): Promise<ReportDoc> {
           { key: 'closed', label: 'Closed', align: 'right' },
         ],
         rows: [...components.entries()]
-          .sort((a, b) => b[1].open - a[1].open)
+          .sort((a, b) => b[1].open - a[1].open || a[0].localeCompare(b[0]))
           .map(([component, v]) => ({ component, ...v })),
         empty: 'No bugs.',
       },
@@ -887,7 +889,9 @@ export async function sprintSummary(ctx: BuildContext): Promise<ReportDoc> {
           { key: 'title', label: 'Title' },
           { key: 'failures', label: 'Failures', align: 'right' },
         ],
-        rows: [...failing.values()].sort((a, b) => b.failures - a.failures).slice(0, 15),
+        rows: [...failing.values()]
+          .sort((a, b) => b.failures - a.failures || a.ref.localeCompare(b.ref))
+          .slice(0, 15),
         empty: 'No failures in this period.',
       },
     ],
@@ -1020,7 +1024,7 @@ export async function automationTrend(ctx: BuildContext): Promise<ReportDoc> {
         ],
         rows: [...slow.entries()]
           .map(([name, s]) => ({ name, avg: Math.round(s.total / s.n / 100) / 10, runs: s.n }))
-          .sort((a, b) => b.avg - a.avg)
+          .sort((a, b) => b.avg - a.avg || a.name.localeCompare(b.name))
           .slice(0, 10),
         empty: 'No automation results in this period.',
       },

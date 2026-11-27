@@ -150,6 +150,7 @@ const KIND_DONE: Record<StartAgentJobInput['kind'], string> = {
   'generate-ui-test': 'Draft Playwright test ready for review',
   'repair-ui-test': 'Suggested test fix ready',
   'analyze-failure': 'Failure analysis ready',
+  'write-report': 'Report summary ready',
 };
 
 /**

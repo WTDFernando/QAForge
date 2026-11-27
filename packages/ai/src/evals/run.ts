@@ -12,6 +12,7 @@ import {
   automationWriterAgent,
   bugAgent,
   failureAnalysisAgent,
+  reportAgent,
   requirementAgent,
   runAgent,
   testCaseReviewerAgent,
@@ -25,6 +26,7 @@ import {
   automationWriterCases,
   bugCases,
   failureAnalysisCases,
+  reportCases,
   requirementCases,
   reviewerCases,
   writerCases,
@@ -77,6 +79,12 @@ Object.assign(EMPTY, {
     confidence: 0,
   },
   automation: { fileName: 'x.spec.ts', code: '', envVars: [], assumptions: [], confidence: 0 },
+  report: {
+    summary: 'Harness check.',
+    highlights: [],
+    risks: [],
+    recommendation: 'Harness check.',
+  },
   'failure-analysis': {
     failureClass: 'FLAKY',
     confidence: 0,
@@ -90,6 +98,7 @@ const MARKER: Record<string, string> = {
   'automation-repair': 'repairing a Playwright test',
   automation: 'Automation Agent',
   'failure-analysis': 'Failure Analysis Agent',
+  report: 'Report Agent',
   requirement: 'Requirement Agent',
   'test-case-writer': 'Test Case Writer',
   'test-case-reviewer': 'Test Case Reviewer',
@@ -139,6 +148,7 @@ async function main() {
   }
   if (!only || only === 'failure')
     results.push(await suite(failureAnalysisAgent, failureAnalysisCases));
+  if (!only || only === 'report') results.push(await suite(reportAgent, reportCases));
   const pass = results.reduce((a, r) => a + r.pass, 0);
   const total = results.reduce((a, r) => a + r.total, 0);
   const cost = results.reduce((a, r) => a + r.cost, 0);

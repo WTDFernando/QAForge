@@ -354,3 +354,59 @@ describe('exports, schedules and email', () => {
     expect(sent).toHaveLength(1);
   });
 });
+
+describe('Report Agent narrative', () => {
+  const redis = { publish: async () => 1 } as never;
+  const bull = (jobId: string) =>
+    ({ data: { jobId }, id: jobId, attemptsMade: 0, opts: {} }) as never;
+
+  it('is queued only when AI is on, then writes a grounded summary and refreshes the exports', async () => {
+    const { queueReportNarrative } = await import('./narrative');
+    const { createAiProcessor } = await import('../ai/processor');
+    const r = await newReport('GO_NO_GO', { releaseId, narrative: true });
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+    const added: string[] = [];
+    const queue = {
+      add: async (_n: string, d: { jobId: string }) => void added.push(d.jobId),
+    } as never;
+
+    await prisma.organization.update({
+      where: { id: project.organizationId },
+      data: { settings: { ai: { enabled: false } } },
+    });
+    const off = await generateReport(r.id, {
+      now: () => NOW,
+      sendMail: null,
+      requestNarrative: (id) => queueReportNarrative(id, queue),
+    });
+    expect(off.narrating).toBe(false);
+    await prisma.organization.update({
+      where: { id: project.organizationId },
+      data: { settings: {} },
+    });
+    const on = await generateReport(r.id, {
+      now: () => NOW,
+      sendMail: null,
+      requestNarrative: (id) => queueReportNarrative(id, queue),
+    });
+    expect(on.narrating).toBe(true);
+    expect(added).toHaveLength(1);
+
+    const before = await prisma.attachment.findMany({
+      where: { entityType: 'report', entityId: r.id },
+    });
+    await createAiProcessor(redis)(bull(added[0]!));
+    const job = await prisma.agentJob.findUniqueOrThrow({ where: { id: added[0] } });
+    expect(job.status).toBe('SUCCEEDED');
+    const saved = await prisma.report.findUniqueOrThrow({ where: { id: r.id } });
+    const narrative = saved.narrative as { summary: string; recommendation: string };
+    expect(narrative.summary).toContain('Go / No-Go for REL-0001 Spring (2.4.0).');
+    expect(narrative.recommendation).toBe('No-go — 2 blocking quality gates not met.');
+    expect(saved.aiJobId).toBe(job.id);
+    const after = await prisma.attachment.findMany({
+      where: { entityType: 'report', entityId: r.id },
+    });
+    expect(after).toHaveLength(4);
+    expect(after.some((a) => before.some((b) => b.id === a.id))).toBe(false);
+  });
+});

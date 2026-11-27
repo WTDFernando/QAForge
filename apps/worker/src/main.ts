@@ -8,6 +8,7 @@ import { scanningEnabled } from '@qaforge/db';
 import { createScanProcessor } from './scan';
 import { createAutomationProcessor } from './automation/processor';
 import { queueFailureAnalysis } from './automation/auto-analysis';
+import { queueReportNarrative } from './reports/narrative';
 import { createReportProcessor } from './reports/processor';
 
 const connection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
@@ -63,11 +64,13 @@ const workers = [
   // Reports: building data is quick; PDF rendering starts a browser, so keep it small.
   new Worker(
     QUEUES.reports,
-    createReportProcessor((job) =>
-      reportQueue.add(job.kind, job, {
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 5000 },
-      }),
+    createReportProcessor(
+      (job) =>
+        reportQueue.add(job.kind, job, {
+          attempts: 2,
+          backoff: { type: 'exponential', delay: 5000 },
+        }),
+      { requestNarrative: (reportId) => queueReportNarrative(reportId, aiQueue) },
     ),
     { connection, concurrency: Number(process.env.REPORT_CONCURRENCY ?? 2), lockDuration: 120_000 },
   ),

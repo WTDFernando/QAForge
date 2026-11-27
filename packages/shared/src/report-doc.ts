@@ -78,9 +78,14 @@ export function cellText(c: ReportCell): string {
 export function documentNumbers(doc: ReportDoc): Set<string> {
   const out = new Set<string>();
   const add = (s: string | number) => {
-    for (const m of String(s).matchAll(/\d+(?:[.,]\d+)?/g)) out.add(normalizeNumber(m[0]));
+    // Item refs (BUG-0012) are checked as refs, not as the number 12.
+    const text = String(s).replace(/\b[A-Z]{2,4}-\d{1,6}\b/g, ' ');
+    for (const m of text.matchAll(/\d+(?:[.,]\d+)?/g)) out.add(normalizeNumber(m[0]));
   };
-  for (const k of doc.kpis) add(k.value);
+  for (const k of doc.kpis) {
+    add(k.value);
+    if (k.unit) add(k.unit);
+  }
   for (const s of doc.sections) {
     if (s.kind === 'bars') for (const p of s.series) add(p.value);
     else {

@@ -7,6 +7,7 @@ export const AGENT_IDS = [
   'bug',
   'automation',
   'failure-analysis',
+  'report',
   'copilot',
 ] as const;
 export type AgentId = (typeof AGENT_IDS)[number];
@@ -39,6 +40,11 @@ export const AGENT_INFO: Record<AgentId, { name: string; description: string }> 
     name: 'Failure Analysis Agent',
     description:
       'Explains why automated tests failed: product bug, test bug, flaky test or environment, with the evidence.',
+  },
+  report: {
+    name: 'Report Agent',
+    description:
+      'Writes the summary, risks and recommendation on reports, using only numbers from the report itself.',
   },
   copilot: {
     name: 'QA Copilot',
@@ -114,6 +120,8 @@ export const startAgentJobSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('repair-ui-test'), automationResultId: z.uuid() }),
   /** Failure Analysis Agent: classify one failed automation result. */
   z.object({ kind: z.literal('analyze-failure'), automationResultId: z.uuid() }),
+  /** Report Agent: summary, risks and recommendation for a report, using only its numbers. */
+  z.object({ kind: z.literal('write-report'), reportId: z.uuid() }),
 ]);
 export type StartAgentJobInput = z.infer<typeof startAgentJobSchema>;
 
@@ -126,6 +134,7 @@ export const AGENT_FOR_KIND: Record<StartAgentJobInput['kind'], AgentId> = {
   'generate-ui-test': 'automation',
   'repair-ui-test': 'automation',
   'analyze-failure': 'failure-analysis',
+  'write-report': 'report',
 };
 
 export type AgentJobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
