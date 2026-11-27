@@ -7,6 +7,7 @@ export { createStorage, LocalDiskDriver, S3Driver, type StorageDriver } from './
 export { nextSeq } from './sequence';
 export { createPerfFixture } from './perf-fixture';
 export { generateProjectToken, hashToken, insertAutomationRun } from './automation';
+export { computeReleaseMetrics, latestResults, releaseBugs } from './releases';
 export { signFileToken, verifyFileToken, type Disposition } from './signed-url';
 export { scanBuffer, scanningEnabled, type ScanResult } from './clamav';
 export type { FieldChanges } from './audit';

@@ -8,3 +8,4 @@ export * from './ai';
 export * from './runs';
 export * from './bugs';
 export * from './automation';
+export * from './releases';

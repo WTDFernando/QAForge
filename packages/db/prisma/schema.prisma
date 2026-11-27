@@ -31,6 +31,7 @@ model User {
   memberships     Membership[]
   invitationsSent Invitation[] @relation("InvitedBy")
   projectsCreated Project[]    @relation("ProjectCreatedBy")
+  approvals       Approval[]
 
   @@map("user")
 }
@@ -196,6 +197,9 @@ model Project {
   automationRuns      AutomationRun[]
   automationSchedules AutomationSchedule[]
   tokens              ProjectToken[]
+  releases            Release[]
+  reports             Report[]
+  reportSchedules     ReportSchedule[]
 
   @@unique([organizationId, key])
   @@index([organizationId, archivedAt])
@@ -418,6 +422,7 @@ model Requirement {
 
   versions     RequirementVersion[]
   testCases    RequirementTestCase[]
+  releaseItems ReleaseItem[]
   /// Values for project custom fields: { <fieldKey>: value }
   customFields Json                  @default("{}")
 
@@ -755,8 +760,9 @@ model TestRun {
   environmentId String?       @db.Uuid
   environment   Environment?  @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   build         String?
-  /// Release relation is added with the Releases module (Phase 4)
+  /// The release this run verifies (Phase 4)
   releaseId     String?       @db.Uuid
+  release       Release?      @relation(fields: [releaseId], references: [id], onDelete: SetNull)
   dueAt         DateTime?
   startedAt     DateTime?
   completedAt   DateTime?
@@ -884,7 +890,8 @@ model Bug {
   deletedAt        DateTime?
   // embedding Unsupported("vector(1024)")?   // [PENDING] duplicate detection on meaning
 
-  testCases TestCaseBug[]
+  testCases    TestCaseBug[]
+  releaseItems ReleaseItem[]
 
   @@unique([projectId, seq])
   @@index([projectId, status, rank])
@@ -1275,4 +1282,196 @@ model ProjectToken {
 
   @@index([projectId])
   @@map("project_token")
+}
+
+// ===========================================================================
+// Phase 4: releases and reports
+// ===========================================================================
+
+enum ReleaseStatus {
+  /// Planning and testing
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  RELEASED
+}
+
+model Release {
+  id           String        @id @default(uuid()) @db.Uuid
+  projectId    String        @db.Uuid
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Per-project sequence -> REL-0001
+  seq          Int
+  name         String
+  /// e.g. 2.4.0
+  version      String
+  description  String        @default("")
+  targetDate   DateTime?
+  status       ReleaseStatus @default(DRAFT)
+  /// Gate results and metrics frozen when approval was requested
+  gateSnapshot Json?
+  requestedAt  DateTime?
+  releasedAt   DateTime?
+  createdById  String        @db.Uuid
+  updatedById  String        @db.Uuid
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  items     ReleaseItem[]
+  testRuns  TestRun[]
+  gates     QualityGate[]
+  approvals Approval[]
+  reports   Report[]
+
+  @@unique([projectId, seq])
+  @@unique([projectId, version])
+  @@map("release")
+}
+
+/// Scope: requirements and bugs in the release (exactly one is set; CHECK constraint in the migration).
+/// Test runs join a release through TestRun.releaseId.
+model ReleaseItem {
+  id            String       @id @default(uuid()) @db.Uuid
+  releaseId     String       @db.Uuid
+  release       Release      @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  requirementId String?      @db.Uuid
+  requirement   Requirement? @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  bugId         String?      @db.Uuid
+  bug           Bug?         @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  createdById   String       @db.Uuid
+  createdAt     DateTime     @default(now())
+
+  @@unique([releaseId, requirementId])
+  @@unique([releaseId, bugId])
+  @@map("release_item")
+}
+
+enum GateMetric {
+  PASS_RATE
+  EXECUTION_COMPLETE
+  OPEN_BUGS
+  REQUIREMENT_COVERAGE
+  HIGH_PRIORITY_COVERAGE
+  AUTOMATION_PASS_RATE
+}
+
+enum GateOperator {
+  GTE
+  LTE
+  EQ
+}
+
+/// Readiness rule, e.g. PASS_RATE >= 95 or OPEN_BUGS (BLOCKER, CRITICAL) <= 0. Evaluated from live data.
+model QualityGate {
+  id        String       @id @default(uuid()) @db.Uuid
+  releaseId String       @db.Uuid
+  release   Release      @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  metric    GateMetric
+  operator  GateOperator
+  threshold Float
+  /// Metric options, e.g. { severities: ["BLOCKER","CRITICAL"] }
+  params    Json         @default("{}")
+  /// Blocking gates must pass before approval can be requested
+  blocking  Boolean      @default(true)
+  position  Int          @default(0)
+
+  @@index([releaseId])
+  @@map("quality_gate")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Named sign-off (QA Lead, Product Manager, Client...). Gate results are frozen at decision time.
+model Approval {
+  id           String         @id @default(uuid()) @db.Uuid
+  releaseId    String         @db.Uuid
+  release      Release        @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  approverId   String         @db.Uuid
+  approver     User           @relation(fields: [approverId], references: [id], onDelete: Cascade)
+  /// Display role, e.g. "QA Lead", "Product Manager", "Client"
+  roleLabel    String
+  status       ApprovalStatus @default(PENDING)
+  comment      String         @default("")
+  gateSnapshot Json?
+  decidedAt    DateTime?
+  createdAt    DateTime       @default(now())
+
+  @@unique([releaseId, approverId])
+  @@map("approval")
+}
+
+enum ReportType {
+  TEST_EXECUTION
+  GO_NO_GO
+  TRACEABILITY_MATRIX
+  BUG_SUMMARY
+  SPRINT_SUMMARY
+  AUTOMATION_TREND
+}
+
+enum ReportStatus {
+  QUEUED
+  READY
+  FAILED
+}
+
+/// A generated report. Numbers are frozen in `data` (from the database, never from the AI);
+/// the Report Agent only writes `narrative`. Exports are Attachments (entityType "report").
+model Report {
+  id             String          @id @default(uuid()) @db.Uuid
+  projectId      String          @db.Uuid
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  releaseId      String?         @db.Uuid
+  release        Release?        @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  scheduleId     String?         @db.Uuid
+  schedule       ReportSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  type           ReportType
+  title          String
+  params         Json            @default("{}")
+  status         ReportStatus    @default(QUEUED)
+  error          String?
+  data           Json?
+  /// Report Agent text: { summary, highlights[], risks[], recommendation }
+  narrative      Json?
+  aiJobId        String?         @db.Uuid
+  /// Read-only share link: only the SHA-256 of the token is stored
+  shareTokenHash String?         @unique
+  shareExpiresAt DateTime?
+  createdById    String?         @db.Uuid
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([projectId, createdAt])
+  @@map("report")
+}
+
+model ReportSchedule {
+  id          String     @id @default(uuid()) @db.Uuid
+  projectId   String     @db.Uuid
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  type        ReportType
+  params      Json       @default("{}")
+  cron        String
+  timezone    String     @default("UTC")
+  /// Formats attached to the email, e.g. ["pdf", "xlsx"]
+  formats     String[]   @default(["pdf"])
+  recipients  String[]
+  enabled     Boolean    @default(true)
+  nextRunAt   DateTime?
+  lastRunAt   DateTime?
+  createdById String     @db.Uuid
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  reports Report[]
+
+  @@index([enabled, nextRunAt])
+  @@map("report_schedule")
 }

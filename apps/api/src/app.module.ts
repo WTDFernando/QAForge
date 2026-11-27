@@ -16,6 +16,7 @@ import { AutomationModule } from './automation/automation.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { TestRunsModule } from './test-runs/test-runs.module';
 import { BugsModule } from './bugs/bugs.module';
+import { ReleasesModule } from './releases/releases.module';
 import { CommentsModule } from './comments/comments.module';
 import { EnvironmentsModule } from './environments/environments.controller';
 import { RequirementsModule } from './requirements/requirements.controller';
@@ -56,6 +57,7 @@ import { ViewsModule } from './views/views.module';
     NotificationsModule,
     TestRunsModule,
     BugsModule,
+    ReleasesModule,
     CommentsModule,
   ],
   providers: [{ provide: APP_PIPE, useClass: ZodValidationPipe }],

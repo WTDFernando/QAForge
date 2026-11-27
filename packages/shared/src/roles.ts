@@ -58,6 +58,10 @@ export const PERMISSIONS = [
   'automation:write',
   'automation:run',
   'automation:configure',
+  'report:read',
+  'report:write',
+  'report:share',
+  'report:schedule',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -71,6 +75,7 @@ const READ_ALL: Permission[] = [
   'bug:read',
   'release:read',
   'automation:read',
+  'report:read',
 ];
 
 const QA_ENGINEER: Permission[] = [
@@ -85,6 +90,7 @@ const QA_ENGINEER: Permission[] = [
   'ai:use',
   'automation:write',
   'automation:run',
+  'report:write',
 ];
 
 const QA_LEAD: Permission[] = [
@@ -96,6 +102,8 @@ const QA_LEAD: Permission[] = [
   'release:sign',
   'audit:read',
   'automation:configure',
+  'report:share',
+  'report:schedule',
 ];
 
 const ADMIN: Permission[] = [
